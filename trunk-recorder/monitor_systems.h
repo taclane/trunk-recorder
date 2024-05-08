@@ -15,4 +15,5 @@
 #include <gnuradio/top_block.h>
 
 int monitor_messages(Config &config, gr::top_block_sptr &tb, std::vector<Source *> &sources, std::vector<System *> &systems, std::vector<Call *> &calls);
+void autotune_p25cc(System_impl *sys);
 #endif

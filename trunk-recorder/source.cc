@@ -42,6 +42,31 @@ void Source::set_min_max() {
   max_hz = center + ((rate / 2) - (if1 / 2));
 }
 
+void Source::set_source_error(int error, int offset){
+  source_errors_queue.push_front(error + offset);
+  if(source_errors_queue.size() > 20)
+  {
+    source_errors_queue.pop_back();
+  }
+}
+
+int Source::get_source_error(){
+  int totalErrors = 0;
+  int totalMeasurements = source_errors_queue.size();
+  std::string errs;
+
+  for(int n = 0; n < totalMeasurements; n++){
+    totalErrors += source_errors_queue[n];
+    errs += std::to_string(source_errors_queue[n]) + " ";
+  }
+
+  if(totalMeasurements > 0){
+    //BOOST_LOG_TRIVIAL(debug) << "Source: " << this->get_num() << " - Errors: " << errs << " Avg: " << totalErrors / totalMeasurements;
+    return (int) totalErrors / totalMeasurements;
+  }
+  return 0;
+}
+
 Source::Source(double c, double r, double e, std::string drv, std::string dev, Config *cfg) {
   rate = r;
   center = c;
@@ -368,6 +393,14 @@ int Source::get_if_gain() {
   return if_gain;
 }
 
+void Source::set_autotune_mode(bool m){
+  autotune_mode = m;
+}
+
+bool Source::get_autotune_mode() {
+  return autotune_mode;
+}
+
 /* -- Recorders -- */
 
 std::vector<Recorder *> Source::find_conventional_recorders_by_freq(Detected_Signal signal) {
@@ -664,7 +697,13 @@ Recorder *Source::get_sigmf_recorder() {
 }
 
 void Source::print_recorders() {
-  BOOST_LOG_TRIVIAL(info) << "[ Source " << src_num << ": " << format_freq(center) << " ] " << device;
+  std::stringstream autotune_avg;
+  if (autotune_mode) 
+  {
+    autotune_avg << " [AutoTune Correction: " << get_source_error() << " Hz]";
+  }
+
+  BOOST_LOG_TRIVIAL(info) << "[ Source " << src_num << ": " << format_freq(center) << " ] " << device << autotune_avg.str();
 
   for (std::vector<p25_recorder_sptr>::iterator it = digital_recorders.begin();
        it != digital_recorders.end(); it++) {

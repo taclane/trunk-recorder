@@ -18,6 +18,11 @@
 
 #include <json.hpp>
 
+#include <boost/accumulators/accumulators.hpp>
+#include <boost/accumulators/statistics.hpp>
+
+using namespace boost::accumulators;
+
 struct Gain_Stage_t {
   std::string stage_name;
   int value;
@@ -71,6 +76,9 @@ class Source {
   signal_detector_cvf::sptr signal_detector;
 
   void add_gain_stage(std::string stage_name, int value);
+
+  bool autotune_mode;
+  std::deque<int> source_errors_queue;
 
 public:
   int get_num();
@@ -150,6 +158,11 @@ public:
   Recorder *get_debug_recorder();
   Recorder *get_sigmf_recorder();
   std::vector<Recorder *> get_recorders();
+
+  void set_autotune_mode(bool m);
+  bool get_autotune_mode();
+  void set_source_error(int freq, int error);
+  int get_source_error();
 
 #if GNURADIO_VERSION < 0x030900
   inline osmosdr::source::sptr cast_to_osmo_sptr(gr::basic_block_sptr p) {

@@ -169,6 +169,16 @@ There is a list of available Plugins [here](./Plugins.md).
 | antenna          |          |               | string, e.g.: **"TX/RX"**   | *usrp only* selects which antenna jack to use                |
 | enabled          |          |     true      | **true** / **false**        | control whether a configured source is enabled or disabled   |
 
+### Source Object - Experimental Options
+
+| Key      | Required | Default Value | Type                 | Description                                                  |
+| -------- | :------: | :-----------: | -------------------- | ------------------------------------------------------------ |
+| autoTune |          | false         | **true** / **false** | Utilize observed tuning offsets to calculate an average error, and apply corrective values to conventional and P25 systems using enabled sources. |
+
+Autotune keeps track of the last twenty tuning errors for each source as reported by the [band-edge filter](https://wiki.gnuradio.org/index.php/FLL_Band-Edge).  These values are used to calculate a running average, and applied at the beginning of each call.  While precision SDR devices may not benefit much from this, autoTune can typically keep cheaper SDRs with a basic TCXO within +/- ~250 Hz of the target frequency, even if the initial error offset or PPM in the config is not too accurate.  If the calculated correction exceeds 2.5 PPM, warnings will be generated to find a closer `ppm` or `error` value in the config.json.
+
+Autotune also applies to P25 control channels using an enabled source. Once per status display (200 seconds), the control channel will be fine-tuned based on the calculated offset for that source.
+
 ***
 ### SigMF Sources
 

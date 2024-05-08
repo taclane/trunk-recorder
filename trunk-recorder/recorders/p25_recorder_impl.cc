@@ -262,8 +262,13 @@ void p25_recorder_impl::stop() {
       recording_duration += fsk4_p25_decode->get_current_length();
     }
 
+    if (source->get_autotune_mode()) 
+    {
+      // Get estimated tuning error for this call, and send results to the source along with current offset
+      source->set_source_error(this->get_freq_error(), autotune_offset);
+    }
     std::string loghdr = log_header(this->call->get_short_name(),this->call->get_call_num(),this->call->get_talkgroup_display(),chan_freq);
-    BOOST_LOG_TRIVIAL(info) << loghdr << "\u001b[33mStopping P25 Recorder Num [" << rec_num << "]\u001b[0m\tTDMA: " << d_phase2_tdma << "\tSlot: " << tdma_slot << "\tHz Error: " << this->get_freq_error();
+    BOOST_LOG_TRIVIAL(info) << loghdr << "\u001b[33mStopping P25 Recorder Num [" << rec_num << "]\u001b[0m\tTDMA: " << d_phase2_tdma << "\tSlot: " << tdma_slot << "\tTuningErr: " << this->get_freq_error() << " Hz";
 
     state = INACTIVE;
     set_enabled(false);
@@ -319,10 +324,26 @@ bool p25_recorder_impl::start(Call *call) {
     this->call = call;
 
     std::string loghdr = log_header(this->call->get_short_name(),this->call->get_call_num(),this->call->get_talkgroup_display(),chan_freq);
-    BOOST_LOG_TRIVIAL(info) << loghdr << "\u001b[32mStarting P25 Recorder Num [" << rec_num << "]\u001b[0m\tTDMA: " << call->get_phase2_tdma() << "\tSlot: " << call->get_tdma_slot() << "\tQPSK: " << qpsk_mod;
+    autotune_offset = 0;
+    std::stringstream autotune_info;
 
-    int offset_amount = (center_freq - chan_freq);
+    if (source->get_autotune_mode()) 
+    {
+      // Auto tune based on recorded errors
+      autotune_offset = source->get_source_error();
+      autotune_info << " AutoTune: " << autotune_offset << " Hz";
 
+      // Warn if calculated error offset > 2.5 PPM.
+      if (abs(autotune_offset) >= ((chan_freq / 1000000) * 2.5 ))
+      {
+        BOOST_LOG_TRIVIAL(warning) << loghdr << "AutoTune offset: " << autotune_offset << "  Exceeds 2.5 PPM. Verify initial offset configured for source: " << source->get_num();
+      }
+    } 
+
+    BOOST_LOG_TRIVIAL(info) << loghdr << "\u001b[32mStarting P25 Recorder Num [" << rec_num << "]\u001b[0m\tTDMA: " << call->get_phase2_tdma() << "\tSlot: " << call->get_tdma_slot() << "\tQPSK: " << qpsk_mod << autotune_info.str();
+  
+    // tune to target freq with autotune adjustments if enabled
+    int offset_amount = (center_freq - chan_freq + autotune_offset);
     prefilter->tune_offset(offset_amount);
 
     if (qpsk_mod) {
