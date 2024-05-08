@@ -127,7 +127,7 @@ analog_recorder::analog_recorder(Source *src, Recorder_Type type, float tone_fre
   squelch_two = gr::analog::pwr_squelch_ff::make(-200, 0.01, 0, true);
 
   if (use_tone_squelch) {
-    tone_squelch = gr::analog::ctcss_squelch_ff::make(system_channel_rate, this->tone_freq, 0.01, 0, 0, false);
+    tone_squelch = gr::analog::ctcss_squelch_ff::make(wav_sample_rate, this->tone_freq, 0.01, 0, 0, false);
   }
   // k = quad_rate/(2*math.pi*max_dev) = 48k / (6.283185*5000) = 1.527
 
