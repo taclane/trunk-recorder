@@ -124,6 +124,7 @@ protected:
   double center_freq;
   bool qpsk_mod;
   double squelch_db;
+  int autotune_offset;
   gr::blocks::selector::sptr modulation_selector;
 
   p25_recorder_fsk4_demod_sptr fsk4_demod;
