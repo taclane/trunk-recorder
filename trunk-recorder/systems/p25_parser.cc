@@ -1056,7 +1056,7 @@ std::vector<TrunkMessage> P25Parser::parse_message(gr::message::sptr msg, System
   std::string s = msg->to_string();
 
  if (s.length() < 2) {
-    BOOST_LOG_TRIVIAL(error) << "P25 Parse error, s: " << s << " Len: " << s.length();
+    BOOST_LOG_TRIVIAL(error) << "[" << system->get_short_name() << "]\t P25 Parse error, s: " << s << " Len: " << s.length() << " Freq: " << format_freq(system->get_current_control_channel());
     message.message_type = INVALID_CC_MESSAGE;
     messages.push_back(message);
     return messages;
