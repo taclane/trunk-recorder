@@ -67,7 +67,7 @@ public:
   std::string system_type;
   std::string upload_script;
   int bcfy_system_id;
-  int message_count;
+  double message_count;
   int decode_rate;
   int retune_attempts;
   time_t last_message_time;
@@ -189,8 +189,8 @@ public:
   std::string get_custom_freq_table_file();
   bool has_custom_freq_table_file();
   int control_channel_count();
-  int get_message_count();
-  void set_message_count(int count);
+  double get_message_count();
+  void set_message_count(double count);
   int get_decode_rate();
   void set_decode_rate(int rate);
   void add_control_channel(double channel);

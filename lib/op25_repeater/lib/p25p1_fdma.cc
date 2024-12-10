@@ -2,6 +2,7 @@
 /* 
  * Copyright 2010, 2011, 2012, 2013, 2014 Max H. Parke KA1RBI 
  * Copyright 2017, 2018, 2019, 2020 Graham J. Norbury
+ * Copyright 2024 Ilya Smirnov / @ilyacodes. All rights reserved.
  * 
  * This is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,6 +33,7 @@
 #include <string.h>
 #include <errno.h>
 #include <vector>
+#include <iomanip>
 #include "bch.h"
 #include "op25_msg_types.h"
 #include "op25_imbe_frame.h"
@@ -498,6 +500,193 @@ namespace gr {
                             if (d_debug >= 10)
                                 fprintf(stderr, ", srcaddr=%d, grpaddr=%d", srcaddr, grpaddr);
                             break;
+                        }
+
+                        case 0x15: { // Motorola alias header
+                            if (lcw[1] == 0x90) {
+                                char lcw_str[256];
+                                snprintf(lcw_str, sizeof(lcw_str), "LCW: ec=%d, pb=%d, sf=%d, lco=%d : %02x %02x %02x %02x %02x %02x %02x %02x %02x",
+                                        ec, pb, sf, lco, lcw[0], lcw[1], lcw[2], lcw[3], lcw[4], lcw[5], lcw[6], lcw[7], lcw[8]);
+                                BOOST_LOG_TRIVIAL(warning) << "MOTOROLA: we got a 0x21" << lcw_str;
+                                int messages = lcw[4] & 0xf;
+                                int id_sequence = lcw[7] >> 4;
+                                BOOST_LOG_TRIVIAL(warning) << "MOTOROLA: we got a 0x21, id_sequence: " << id_sequence << ", messages: " << messages << ", " ;
+
+                                // initialize the alias buffer
+                                alias_buffer.resize(messages + 1);
+                                alias_buffer[0] = lcw;
+                                for (int i = 1; i <= messages; i++) {
+                                    alias_buffer[i] = std::vector<uint8_t>(9, 0);
+                                }
+                            }
+                            break;
+                        }
+                        case 0x17: { // Motorola alias messages
+                            if (lcw[1] == 0x90) {
+                                char lcw_str[256];
+                                snprintf(lcw_str, sizeof(lcw_str), "LCW: ec=%d, pb=%d, sf=%d, lco=%d : %02x %02x %02x %02x %02x %02x %02x %02x %02x",
+                                        ec, pb, sf, lco, lcw[0], lcw[1], lcw[2], lcw[3], lcw[4], lcw[5], lcw[6], lcw[7], lcw[8]);
+                                BOOST_LOG_TRIVIAL(warning) << "MOTOROLA: we got a 0x23" << lcw_str;
+
+                                // get message count
+                                int messages = 0;
+                                if (alias_buffer[0].size() != 0) {
+                                    messages = alias_buffer[0][4] & 0xf;
+                                }
+
+                                int message = lcw[2] & 0xf;
+                                int id_sequence = lcw[3] >> 4;
+
+                                BOOST_LOG_TRIVIAL(warning) << "MOTOROLA: we got a 0x23, id_sequence: " << id_sequence << ", message: " << message << "/" << messages << ", " ;
+
+                                alias_buffer[message] = lcw;
+
+                                if (message == messages) {
+                                    std::stringstream ss;
+
+                                    // assembler payloads from mesage buffer ino one string
+                                    for (int i = 1; i <= messages; i++) {
+                                        ss << std::hex << std::setw(1) << std::setfill('0') << (int)(alias_buffer[i][3] & 0xf);
+                                        for (int j = 4; j <= 8; j++) {
+                                            ss << std::hex << std::setw(2) << std::setfill('0') << (int)(alias_buffer[i][j]);
+                                        }
+                                    }    
+                                    
+                                    BOOST_LOG_TRIVIAL(warning) << "MOTOROLA: we got all messages, id_sequence: " << id_sequence;
+                                    BOOST_LOG_TRIVIAL(warning) << "MOTOROLA: " << ss.str();
+
+                                    struct AliasData {
+                                        std::string wacn;
+                                        std::string sys;
+                                        std::string radio;
+                                        std::string aliascode;
+                                        int aliaslen;
+                                        std::string checksum;
+                                        std::string aliastext;
+                                    };
+
+                                    std::map<std::string, int> length_lookup = {
+                                        {"94", 1}, {"32", 2}, {"95", 3}, {"9d", 4}, {"1b", 5}, {"77", 6}, {"b5", 7}, 
+                                        {"6e", 8}, {"24", 9}, {"61", 10}, {"2d", 11}, {"7d", 12}, {"83", 13}, {"29", 14}
+                                    };
+
+                                    std::string data = ss.str();
+
+                                    AliasData aliasData;
+                                    aliasData.wacn = data.substr(0, 5);
+                                    aliasData.sys = data.substr(5, 3);
+                                    aliasData.radio = data.substr(8, 6);
+                                    auto it = length_lookup.find(data.substr(14, 2));
+                                    aliasData.aliaslen = (it != length_lookup.end()) ? it->second : 0;
+                                    aliasData.aliascode = data.substr(14, aliasData.aliaslen*4);
+                                    aliasData.checksum = data.substr(14 + aliasData.aliaslen*4, 4);
+
+                                    BOOST_LOG_TRIVIAL(warning) << "MOTOROLA: WACN:         " << aliasData.wacn << std::endl;
+                                    BOOST_LOG_TRIVIAL(warning) << "MOTOROLA: SYS:          " << aliasData.sys << std::endl;
+                                    BOOST_LOG_TRIVIAL(warning) << "MOTOROLA: Radio:        " << aliasData.radio << std::endl;
+                                    BOOST_LOG_TRIVIAL(warning) << "MOTOROLA: Alias Length: " << aliasData.aliaslen << std::endl;
+                                    BOOST_LOG_TRIVIAL(warning) << "MOTOROLA: Alias Code:   " << aliasData.aliascode << std::endl;
+                                    BOOST_LOG_TRIVIAL(warning) << "MOTOROLA: Checksum:     " << aliasData.checksum << std::endl;
+
+        std::string payload = aliasData.wacn + aliasData.sys + aliasData.radio + aliasData.aliascode;
+
+        // hex to str
+        std::vector<int8_t> payloadBytes;
+        for (size_t i = 0; i < payload.length(); i += 2) {
+            std::istringstream iss(payload.substr(i, 2));
+            int byte;
+            iss >> std::hex >> byte;
+            payloadBytes.push_back(static_cast<int8_t>(byte));
+        }
+
+        // crc
+        uint16_t crc = 0x0000; 
+        
+        for (size_t j = 0; j < payloadBytes.size(); ++j) {
+            uint8_t byte = payloadBytes[j];
+            crc ^= byte << 8; 
+            
+            for (int i = 0; i < 8; i++) {
+                if (crc & 0x8000) {
+                    crc = (crc << 1) ^ 0x1021;
+                } else {
+                    crc <<= 1;
+                }
+            }
+        }
+        uint16_t crc_calc = ~crc & 0xFFFF;
+
+        // decode if crc check passes
+        if (crc_calc == std::stoi(aliasData.checksum, nullptr, 16)) {
+            BOOST_LOG_TRIVIAL(warning) << "MOTOROLA: CRC-16/GSM check passed, crc = "<< std::hex << crc_calc << std::endl;
+
+            std::vector<int8_t> encoded(payloadBytes.begin()+7, payloadBytes.end());
+            
+            const int8_t LOOKUP_TABLE[256] = {
+                -14,   46,  102, -112,  116, -118,  111,  120,  -69,   83,    3,   17,  104,  -51,   68,   23,
+                 40,   95,   30, -124,  117,  121,  110, -101,   44,  -66,   98,   45,  -15,  124,  -72, -125,
+                -39,   78,  109,    2,   97,   61,  -88,    6,  -71,   -8, -100,   55,   58,   35,  -63,   80,
+                -19,  -97,  -81,   59,  -67, -126,  -70,  -96,  -33,  -62,   71,   34,  -16,  -18,  -95,   -2,
+                -94,   16,   91,   72,   87,  -93,    5,   96,  123,   13,   -7,  108,  -77,   86,   76,  -68,
+                 41,  -92,   15,  -20,  -74,  -91,  -90,   60,  127,  107,  -76,   33,  -83,  -82,  -60,  -56,
+                -59,   93,  -34,  -32,   29,   25,   75,  -58,   12,   63,   90,  -57,  -31,   89,   85,   84,
+                 74,   67,   66,  -30,  -29,   -6,    0,  -28,  -27,   24,   65,   11,   10,  -26,   -4,   -3,
+                -46,  -10,  -44,   43,   99,   73, -108,   94,  -89,   92,  112,  105,   -9,    8,  -79,  125,
+                 56,  -49,  -52,  -40,   81, -113,  -43, -109,  106,  -13,  -17,  126,   -5,  100,  -12,   53,
+                 39,    7,   49,   20, -121, -104,  118,   52,  -54, -110,   51,   27,   79, -116,    9,   64,
+                 50,   54,  119,   18,  -45,  -61,    1,  -85,  114, -127, -107,  -55,  -64,  -23,  101,   82,
+                 36,   48,   28,  -37, -120,  -24, -105,  -99,   88,   38,    4,   57,  -84,   42,  -98,  -86,
+                 37,  -41,  -50,  -21, -106,  -11,   14, -115,  -36,  -87,   47,  -35,   31,  -22, -111,  -73,
+                -42, -119, -117,  -47,  -80, -103,   19,  122,  -25, -102,  -75, -122,   -1,   70, -123,  -78,
+                115,  -38,  -65,  -48,  113,  -53,   77, -128,   21,  103,   22,   26,   32, -114,   69,   62};
+
+            // Create array for decoded computed bytes (big-endian)
+            std::vector<uint8_t> decoded(encoded.size(), 0);
+
+            // Set up the long-running accumulator
+            uint16_t accumulator = decoded.size() ;
+            
+            // Calculate each byte sequentially
+            for (size_t byteIndex = 0; byteIndex < decoded.size(); ++byteIndex) {
+                // Multiplication step 1
+                uint16_t accum_mult = ((accumulator + 65536) % 65536) * 293 + 0x72E9;
+
+                // Lookup table step
+                uint8_t lut = LOOKUP_TABLE[encoded[byteIndex] + 128];
+                uint8_t mult1 = lut - (accum_mult >> 8);
+
+                // Incrementing step
+                uint8_t mult2 = 1;
+                uint8_t shortstop = accum_mult | 0x1;
+                uint8_t increment = shortstop << 1;
+
+                while ((mult2 != -1) && (shortstop != 1)) {
+                    shortstop += increment;
+                    mult2 += 2;
+                }
+
+                // Multiplication step 2
+                decoded[byteIndex] = mult1 * mult2;
+
+                // Update accumulator
+                accumulator += ((encoded[byteIndex] + 256) % 256) + 1;
+            }
+
+            // Reconstruct alias string
+            std::string alias;
+            for (size_t i = 0; i < decoded.size() / 2; ++i) {
+                alias += (decoded[i*2] << 8) | decoded[i*2 + 1];
+            }
+
+            aliasData.aliastext = alias;
+
+            BOOST_LOG_TRIVIAL(warning) << "MOTOROLA: Alias Text:   " << aliasData.aliastext << std::endl << std::endl;
+        } else {
+            BOOST_LOG_TRIVIAL(warning) << "MOTOROLA: CRC-16/GSM check failed, crc = " << std::hex<< crc << std::endl << std::endl;
+        }
+                            }
+                            break;
+                        }
                         }
                     }
                 } else if (sf == 1) {						// sf=1, implicit MFID

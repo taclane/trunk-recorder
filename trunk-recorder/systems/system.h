@@ -131,8 +131,8 @@ public:
   virtual double get_next_control_channel() = 0;
   virtual double get_current_control_channel() = 0;
   virtual int channel_count() = 0;
-  virtual int get_message_count() = 0;
-  virtual void set_message_count(int count) = 0;
+  virtual double get_message_count() = 0;
+  virtual void set_message_count(double count) = 0;
   virtual void set_decode_rate(int rate) = 0;
   virtual int get_decode_rate() = 0;
   virtual void add_channel(double channel) = 0;

@@ -426,10 +426,10 @@ std::vector<double> System_impl::get_control_channels() {
   return control_channels;
 }
 
-int System_impl::get_message_count() {
+double System_impl::get_message_count() {
   return message_count;
 }
-void System_impl::set_message_count(int count) {
+void System_impl::set_message_count(double count) {
   message_count = count;
 }
 

@@ -374,6 +374,16 @@ void p25p2_tdma::decode_mac_msg(const uint8_t byte_buf[], const unsigned int len
 			case 0x12: // Individual Paging with Priority
 				msg_len = (((byte_buf[msg_ptr+1] & 0x3) + 1) * 3) + 2;
 				break;
+			// case 0x95: // moto
+			// 	// print hex of byte_buf
+			// 	fprintf(stderr, "mco=%01x/%02x(0x%02x), len=%d ", b1b2, mco, op, msg_len);
+
+			// 	for (int i = 0; i < sizeof(byte_buf) / sizeof(byte_buf[0]); i++) {
+			// 		std::cout << std::hex << (int)(byte_buf[i]) << " ";
+			// 	}
+			// 	std::cout << std::endl;
+			// 	break;
+
 			default:
 				if (b1b2 == 0x2) {				// Manufacturer-specific ops have len field
 					mfid = byte_buf[msg_ptr+1];
@@ -384,7 +394,11 @@ void p25p2_tdma::decode_mac_msg(const uint8_t byte_buf[], const unsigned int len
 		}
 
 		if (d_debug >= 10) {
-			fprintf(stderr, "mco=%01x/%02x(0x%02x), len=%d", b1b2, mco, op, msg_len);
+			fprintf(stderr, "mco=%01x/%02x(0x%02x), len=%d - ", b1b2, mco, op, msg_len);
+							for (int i = 0; i < sizeof(byte_buf) / sizeof(byte_buf[0]); i++) {
+					std::cout << std::hex << (int)(byte_buf[i]) << " ";
+				}
+				std::cout << std::endl;
 		}
 
 		// Generic message processing

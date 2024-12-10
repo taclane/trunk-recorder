@@ -202,6 +202,11 @@ void print_status(std::vector<Source *> &sources, std::vector<System *> &systems
 
     if ((sys->get_system_type() != "conventional") && (sys->get_system_type() != "conventionalP25") && (sys->get_system_type() != "conventionalDMR") && (sys->get_system_type() != "conventionalSIGMF")) {
       BOOST_LOG_TRIVIAL(info) << "[" << sys->get_short_name() << "]\t" << format_freq(sys->get_current_control_channel()) << "\t" << sys->get_decode_rate() << " msg/sec";
+      
+      if (sys->get_source()->get_autotune_mode()){
+        // Apply tuning correction to control channels
+        autotune_p25cc(sys);
+      }
     }
   }
 
@@ -847,6 +852,11 @@ int monitor_messages(Config &config, gr::top_block_sptr &tb, std::vector<Source 
             plugman_trunk_message(trunk_messages, system);
           }
 
+          if (msg->type() == 12) {
+            system->set_message_count(system->get_message_count() + 0.6);
+            //BOOST_LOG_TRIVIAL(info) << "[" << system->get_short_name() << "]\tMBT message:";
+          }
+
           if (msg->type() == -1) {
             BOOST_LOG_TRIVIAL(error) << "[" << system->get_short_name() << "]\t process_data_unit timeout";
           }
@@ -891,4 +901,17 @@ int monitor_messages(Config &config, gr::top_block_sptr &tb, std::vector<Source 
       print_status(sources, systems, calls);
     }
   }
+}
+
+void autotune_p25cc(System_impl *sys) {
+      double control_channel_freq = sys->get_current_control_channel();
+      
+      int fll_error = sys->p25_trunking->get_freq_error();
+      sys->get_source()->set_source_error(fll_error, sys->p25_trunking->autotune_offset);
+      
+      int source_error = sys->get_source()->get_source_error();
+      BOOST_LOG_TRIVIAL(info) << "\tCurr AutoTune: " << sys->p25_trunking->autotune_offset << " Hz\tObsvd Error: " << fll_error << "Hz\tNext AutoTune: " << source_error << " Hz";
+      
+      sys->p25_trunking->finetune_freq(control_channel_freq - source_error);
+      sys->p25_trunking->autotune_offset = source_error;
 }

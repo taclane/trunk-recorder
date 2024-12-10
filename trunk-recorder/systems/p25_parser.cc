@@ -1056,7 +1056,7 @@ std::vector<TrunkMessage> P25Parser::parse_message(gr::message::sptr msg, System
   std::string s = msg->to_string();
 
  if (s.length() < 2) {
-    BOOST_LOG_TRIVIAL(error) << "P25 Parse error, s: " << s << " Len: " << s.length();
+    BOOST_LOG_TRIVIAL(error) << "[" << system->get_short_name() << "]\t P25 Parse error, s: " << s << " Len: " << s.length() << " Freq: " << format_freq(system->get_current_control_channel());
     message.message_type = INVALID_CC_MESSAGE;
     messages.push_back(message);
     return messages;
@@ -1150,6 +1150,9 @@ std::vector<TrunkMessage> P25Parser::parse_message(gr::message::sptr msg, System
     mbt_data <<= 32; // for missing crc
     unsigned long opcode = bitset_shift_mask(header, 32, 0x3f);
     unsigned long link_id = bitset_shift_mask(header, 48, 0xffffff);
+
+    unsigned long blocks = bitset_shift_mask(header, 40, 0xff);  //0x7f
+
     /*BOOST_LOG_TRIVIAL(debug) << "RAW  Data    " <<b;
     BOOST_LOG_TRIVIAL(debug) << "RAW  Data Length " <<s.length();*/
     BOOST_LOG_TRIVIAL(debug) << "MBT:  opcode: $" << std::hex << opcode;
