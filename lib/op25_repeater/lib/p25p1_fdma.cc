@@ -502,7 +502,7 @@ namespace gr {
                             break;
                         }
 
-                        case 0x15: { // Motorola alias header
+                        case 0x15ff: { // Motorola alias header
                             if (lcw[1] == 0x90) {
                                 char lcw_str[256];
                                 snprintf(lcw_str, sizeof(lcw_str), "LCW: ec=%d, pb=%d, sf=%d, lco=%d : %02x %02x %02x %02x %02x %02x %02x %02x %02x",
@@ -513,7 +513,7 @@ namespace gr {
                                 BOOST_LOG_TRIVIAL(warning) << "MOTOROLA: we got a 0x21, id_sequence: " << id_sequence << ", messages: " << messages << ", " ;
 
                                 // initialize the alias buffer
-                                alias_buffer.resize(messages + 1);
+                                //alias_buffer.resize(messages + 1);
                                 alias_buffer[0] = lcw;
                                 for (int i = 1; i <= messages; i++) {
                                     alias_buffer[i] = std::vector<uint8_t>(9, 0);
@@ -521,7 +521,7 @@ namespace gr {
                             }
                             break;
                         }
-                        case 0x17: { // Motorola alias messages
+                        case 0x17ff: { // Motorola alias messages
                             if (lcw[1] == 0x90) {
                                 char lcw_str[256];
                                 snprintf(lcw_str, sizeof(lcw_str), "LCW: ec=%d, pb=%d, sf=%d, lco=%d : %02x %02x %02x %02x %02x %02x %02x %02x %02x",
