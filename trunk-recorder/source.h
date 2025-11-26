@@ -21,7 +21,7 @@
 
 struct Gain_Stage_t {
   std::string stage_name;
-  int value;
+  double value;
 };
 
 class Source {
@@ -37,15 +37,15 @@ class Source {
   bool attached_detector;
   bool attached_selector;
   bool gain_mode;
-  int gain;
-  int bb_gain;
-  int if_gain;
-  int lna_gain;
-  int tia_gain;
-  int pga_gain;
-  int mix_gain;
-  int vga1_gain;
-  int vga2_gain;
+  double gain;
+  double bb_gain;
+  double if_gain;
+  double lna_gain;
+  double tia_gain;
+  double pga_gain;
+  double mix_gain;
+  double vga1_gain;
+  double vga2_gain;
   int max_digital_recorders;
   int max_debug_recorders;
   int max_sigmf_recorders;
@@ -72,7 +72,7 @@ class Source {
   gr::blocks::selector::sptr recorder_selector;
   signal_detector_cvf::sptr signal_detector;
 
-  void add_gain_stage(std::string stage_name, int value);
+  void add_gain_stage(std::string stage_name, double value);
 
 public:
   int get_num();
@@ -103,16 +103,16 @@ public:
   void set_freq_corr(double p);
 
   /* -- Gain -- */
-  void set_if_gain(int i);
-  int get_if_gain();
+  void set_if_gain(double i);
+  double get_if_gain();
   void set_gain_mode(bool m);
   bool get_gain_mode();
-  void set_gain(int r);
+  void set_gain(double r);
   std::vector<Gain_Stage_t> get_gain_stages();
   int get_gain_by_name(std::string name);
-  void set_gain_by_name(std::string name, int r);
-  int get_gain();
-  int get_bb_gain();
+  void set_gain_by_name(std::string name, double r);
+  double get_gain();
+  double get_bb_gain();
   int get_mix_gain();
   int get_lna_gain();
   int get_tia_gain();

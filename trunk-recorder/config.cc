@@ -483,17 +483,17 @@ bool load_config(string config_file, Config &config, gr::top_block_sptr &tb, std
           double ppm = element.value("ppm", 0.0);
           bool autotune = element.value("autoTune", false);
           bool agc = element.value("agc", false);
-          int gain = element.value("gain", 0);
-          int if_gain = element.value("ifGain", 0);
-          int bb_gain = element.value("bbGain", 0);
-          int mix_gain = element.value("mixGain", 0);
-          int lna_gain = element.value("lnaGain", 0);
-          int pga_gain = element.value("pgaGain", 0);
-          int tia_gain = element.value("tiaGain", 0);
-          int amp_gain = element.value("ampGain", 0);
-          int vga_gain = element.value("vgaGain", 0);
-          int vga1_gain = element.value("vga1Gain", 0);
-          int vga2_gain = element.value("vga2Gain", 0);
+          double gain = element.value("gain", 0.0);
+          double if_gain = element.value("ifGain", 0.0);
+          double bb_gain = element.value("bbGain", 0.0);
+          double mix_gain = element.value("mixGain", 0.0);
+          double lna_gain = element.value("lnaGain", 0.0);
+          double pga_gain = element.value("pgaGain", 0.0);
+          double tia_gain = element.value("tiaGain", 0.0);
+          double amp_gain = element.value("ampGain", 0.0);
+          double vga_gain = element.value("vgaGain", 0.0);
+          double vga1_gain = element.value("vga1Gain", 0.0);
+          double vga2_gain = element.value("vga2Gain", 0.0);
 
           std::string antenna = element.value("antenna", "");
 
@@ -503,17 +503,17 @@ bool load_config(string config_file, Config &config, gr::top_block_sptr &tb, std
           BOOST_LOG_TRIVIAL(info) << "PPM Error: " << element.value("ppm", 0.0);
           BOOST_LOG_TRIVIAL(info) << "P25 Autotune: " << element.value("autoTune", false);
           BOOST_LOG_TRIVIAL(info) << "Auto gain control: " << element.value("agc", false);
-          BOOST_LOG_TRIVIAL(info) << "Gain: " << element.value("gain", 0);
-          BOOST_LOG_TRIVIAL(info) << "IF Gain: " << element.value("ifGain", 0);
-          BOOST_LOG_TRIVIAL(info) << "BB Gain: " << element.value("bbGain", 0);
-          BOOST_LOG_TRIVIAL(info) << "LNA Gain: " << element.value("lnaGain", 0);
-          BOOST_LOG_TRIVIAL(info) << "PGA Gain: " << element.value("pgaGain", 0);
-          BOOST_LOG_TRIVIAL(info) << "TIA Gain: " << element.value("tiaGain", 0);
-          BOOST_LOG_TRIVIAL(info) << "MIX Gain: " << element.value("mixGain", 0);
-          BOOST_LOG_TRIVIAL(info) << "AMP Gain: " << element.value("ampGain", 0);
-          BOOST_LOG_TRIVIAL(info) << "VGA Gain: " << element.value("vgaGain", 0);
-          BOOST_LOG_TRIVIAL(info) << "VGA1 Gain: " << element.value("vga1Gain", 0);
-          BOOST_LOG_TRIVIAL(info) << "VGA2 Gain: " << element.value("vga2Gain", 0);
+          BOOST_LOG_TRIVIAL(info) << "Gain: " << element.value("gain", 0.0);
+          BOOST_LOG_TRIVIAL(info) << "IF Gain: " << element.value("ifGain", 0.0);
+          BOOST_LOG_TRIVIAL(info) << "BB Gain: " << element.value("bbGain", 0.0);
+          BOOST_LOG_TRIVIAL(info) << "LNA Gain: " << element.value("lnaGain", 0.0);
+          BOOST_LOG_TRIVIAL(info) << "PGA Gain: " << element.value("pgaGain", 0.0);
+          BOOST_LOG_TRIVIAL(info) << "TIA Gain: " << element.value("tiaGain", 0.0);
+          BOOST_LOG_TRIVIAL(info) << "MIX Gain: " << element.value("mixGain", 0.0);
+          BOOST_LOG_TRIVIAL(info) << "AMP Gain: " << element.value("ampGain", 0.0);
+          BOOST_LOG_TRIVIAL(info) << "VGA Gain: " << element.value("vgaGain", 0.0);
+          BOOST_LOG_TRIVIAL(info) << "VGA1 Gain: " << element.value("vga1Gain", 0.0);
+          BOOST_LOG_TRIVIAL(info) << "VGA2 Gain: " << element.value("vga2Gain", 0.0);
           BOOST_LOG_TRIVIAL(info) << "Idle Silence: " << element.value("silenceFrame", 0);
 
           if ((driver == "osmosdr") && (long(rate) % 24000 != 0)) {
