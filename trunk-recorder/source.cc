@@ -320,7 +320,7 @@ void Source::set_gain(double r) {
     cast_to_osmo_sptr(source_block)->set_gain(gain);
     double current_gain = cast_to_osmo_sptr(source_block)->get_gain();
     if (current_gain != gain) {
-      BOOST_LOG_TRIVIAL(error) << "Requested Gain of " << gain << " not supported, closest value is: " << current_gain;
+      BOOST_LOG_TRIVIAL(error) << "Requested Gain of " << gain << " not supported, driver using: " << current_gain;
     } 
     BOOST_LOG_TRIVIAL(info) << "Gain set to: " << current_gain;
   }
@@ -345,7 +345,7 @@ void Source::set_gain_by_name(std::string name, double new_gain) {
     cast_to_osmo_sptr(source_block)->set_gain(new_gain, name);
     double current_gain = cast_to_osmo_sptr(source_block)->get_gain(name);
     if (current_gain != new_gain) {
-      BOOST_LOG_TRIVIAL(error) << "Requested " << name << " Gain of " << new_gain << " not supported, closest value is: " << current_gain;
+      BOOST_LOG_TRIVIAL(error) << "Requested " << name << " Gain of " << new_gain << " not supported, driver using: " << current_gain;
     }
     BOOST_LOG_TRIVIAL(info) << name << " Gain set to: " << current_gain;
     add_gain_stage(name, new_gain);
