@@ -318,7 +318,11 @@ void Source::set_gain(double r) {
   if (driver == "osmosdr") {
     gain = r;
     cast_to_osmo_sptr(source_block)->set_gain(gain);
-    BOOST_LOG_TRIVIAL(info) << "Gain set to: " << cast_to_osmo_sptr(source_block)->get_gain();
+    double current_gain = cast_to_osmo_sptr(source_block)->get_gain();
+    if (current_gain != gain) {
+      BOOST_LOG_TRIVIAL(error) << "Requested Gain of " << gain << " not supported, closest value is: " << current_gain;
+    } 
+    BOOST_LOG_TRIVIAL(info) << "Gain set to: " << current_gain;
   }
 
   if (driver == "usrp") {
@@ -339,10 +343,14 @@ std::vector<Gain_Stage_t> Source::get_gain_stages() {
 void Source::set_gain_by_name(std::string name, double new_gain) {
   if (driver == "osmosdr") {
     cast_to_osmo_sptr(source_block)->set_gain(new_gain, name);
-    BOOST_LOG_TRIVIAL(info) << name << " Gain set to: " << cast_to_osmo_sptr(source_block)->get_gain(name);
+    double current_gain = cast_to_osmo_sptr(source_block)->get_gain(name);
+    if (current_gain != new_gain) {
+      BOOST_LOG_TRIVIAL(error) << "Requested " << name << " Gain of " << new_gain << " not supported, closest value is: " << current_gain;
+    }
+    BOOST_LOG_TRIVIAL(info) << name << " Gain set to: " << current_gain;
     add_gain_stage(name, new_gain);
   } else {
-    BOOST_LOG_TRIVIAL(error) << "Unable to set Gain by Name for SDR drive: " << driver;
+    BOOST_LOG_TRIVIAL(error) << "Unable to set Gain by Name for SDR driver: " << driver;
   }
 }
 
