@@ -113,12 +113,12 @@ public:
   void set_gain_by_name(std::string name, double r);
   double get_gain();
   double get_bb_gain();
-  int get_mix_gain();
-  int get_lna_gain();
-  int get_tia_gain();
-  int get_pga_gain();
-  int get_vga1_gain();
-  int get_vga2_gain();
+  double get_mix_gain();
+  double get_lna_gain();
+  double get_tia_gain();
+  double get_pga_gain();
+  double get_vga1_gain();
+  double get_vga2_gain();
 
   /* -- Recorders -- */
   void print_recorders();

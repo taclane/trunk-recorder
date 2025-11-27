@@ -379,6 +379,34 @@ double Source::get_if_gain() {
   return if_gain;
 }
 
+double Source::get_bb_gain() {
+  return bb_gain;
+}
+
+double Source::get_mix_gain() {
+  return mix_gain;
+}
+
+double Source::get_lna_gain() {
+  return lna_gain;
+}
+
+double Source::get_tia_gain() {
+  return tia_gain;
+}
+
+double Source::get_pga_gain() {
+  return pga_gain;
+}
+
+double Source::get_vga1_gain() {
+  return vga1_gain;
+}
+
+double Source::get_vga2_gain() {
+  return vga2_gain;
+}
+
 void Source::add_autotune_error_measurement(int error, int offset){
   autotune_manager->add_error_measurement(error, offset);
 }
