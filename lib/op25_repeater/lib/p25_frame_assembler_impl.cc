@@ -140,41 +140,81 @@ static const int MAX_IN = 1;	// maximum number of input streams
       // p1fdma.clear(); //All this does is Clear the Vocoder - I am nervous about doing this because there are some memsets...
     }
 
-void p25_frame_assembler_impl::send_grp_src_id() {
-          long tdma_src_id = -1;
-          long tdma_grp_id = -1;
-          long fdma_src_id = -1;
-          long fdma_grp_id = -1;
+bool p25_frame_assembler_impl::check_alias_queue() {
+  bool alias_created = false;
+  
+  // Check for OTA aliases from FDMA (Phase 1)
+  std::tuple<long, std::string, std::string> fdma_alias = p1fdma.get_alias_ota();
+  if (std::get<0>(fdma_alias) > 0 && !std::get<1>(fdma_alias).empty()) {
+    pmt::pmt_t alias_tuple = pmt::make_tuple(
+      pmt::from_long(std::get<0>(fdma_alias)),
+      pmt::string_to_symbol(std::get<1>(fdma_alias)),
+      pmt::string_to_symbol(std::get<2>(fdma_alias))
+    );
+    add_item_tag(0, nitems_written(0), pmt::intern("alias_ota"), alias_tuple, d_tag_src);
+    BOOST_LOG_TRIVIAL(debug) << "P25 Frame Assembler: Created FDMA alias_ota tag for radio " << std::get<0>(fdma_alias) << ": '" << std::get<1>(fdma_alias) << "' (source: " << std::get<2>(fdma_alias) << ")";
+    alias_created = true;
+  }
+  
+  // Check for OTA aliases from TDMA (Phase 2)
+  std::tuple<long, std::string, std::string> tdma_alias = p2tdma.get_alias_ota();
+  if (std::get<0>(tdma_alias) > 0 && !std::get<1>(tdma_alias).empty()) {
+    pmt::pmt_t alias_tuple = pmt::make_tuple(
+      pmt::from_long(std::get<0>(tdma_alias)),
+      pmt::string_to_symbol(std::get<1>(tdma_alias)),
+      pmt::string_to_symbol(std::get<2>(tdma_alias))
+    );
+    add_item_tag(0, nitems_written(0), pmt::intern("alias_ota"), alias_tuple, d_tag_src);
+    BOOST_LOG_TRIVIAL(debug) << "P25 Frame Assembler: Created TDMA alias_ota tag for radio " << std::get<0>(tdma_alias) << ": '" << std::get<1>(tdma_alias) << "' (source: " << std::get<2>(tdma_alias) << ")";
+    alias_created = true;
+  }
+  
+  return alias_created;
+}
 
-          tdma_src_id = p2tdma.get_ptt_src_id(); 
-          tdma_grp_id = p2tdma.get_ptt_grp_id(); 
-          fdma_src_id = p1fdma.get_curr_src_id();
-          fdma_grp_id = p1fdma.get_curr_grp_id();
+bool p25_frame_assembler_impl::send_grp_src_id() {
+  bool tag_created = false;
+  
+  long tdma_src_id = -1;
+  long tdma_grp_id = -1;
+  long fdma_src_id = -1;
+  long fdma_grp_id = -1;
 
-          // If a SRC wasn't received on the voice channel since the last check, it will be -1
-          if (fdma_src_id > 0) {
-            add_item_tag(0, nitems_written(0), pmt::intern("src_id"), pmt::from_long(fdma_src_id), d_tag_src);
-          }
+  tdma_src_id = p2tdma.get_ptt_src_id(); 
+  tdma_grp_id = p2tdma.get_ptt_grp_id(); 
+  fdma_src_id = p1fdma.get_curr_src_id();
+  fdma_grp_id = p1fdma.get_curr_grp_id();
 
-          if (tdma_src_id > 0) {
-            add_item_tag(0, nitems_written(0), pmt::intern("src_id"), pmt::from_long(tdma_src_id), d_tag_src);
-          }
+  // If a SRC wasn't received on the voice channel since the last check, it will be -1
+  if (fdma_src_id > 0) {
+    add_item_tag(0, nitems_written(0), pmt::intern("src_id"), pmt::from_long(fdma_src_id), d_tag_src);
+    tag_created = true;
+  }
 
-          if ((tdma_src_id > 0) && (fdma_src_id > 0)) {
-            BOOST_LOG_TRIVIAL(info) << " Both TDMA and FDMA SRC IDs are set. TDMA: " << tdma_src_id << " FDMA: " << fdma_src_id;
-          }
+  if (tdma_src_id > 0) {
+    add_item_tag(0, nitems_written(0), pmt::intern("src_id"), pmt::from_long(tdma_src_id), d_tag_src);
+    tag_created = true;
+  }
 
-          if (fdma_grp_id > 0) {
-            add_item_tag(0, nitems_written(0), pmt::intern("grp_id"), pmt::from_long(fdma_grp_id), d_tag_src);
-          }
+  if ((tdma_src_id > 0) && (fdma_src_id > 0)) {
+    BOOST_LOG_TRIVIAL(info) << " Both TDMA and FDMA SRC IDs are set. TDMA: " << tdma_src_id << " FDMA: " << fdma_src_id;
+  }
 
-          if (tdma_grp_id > 0) {
-            add_item_tag(0, nitems_written(0), pmt::intern("grp_id"), pmt::from_long(tdma_grp_id), d_tag_src);
-          }
+  if (fdma_grp_id > 0) {
+    add_item_tag(0, nitems_written(0), pmt::intern("grp_id"), pmt::from_long(fdma_grp_id), d_tag_src);
+    tag_created = true;
+  }
 
-          if ((tdma_grp_id > 0) && (fdma_grp_id > 0)) {
-            BOOST_LOG_TRIVIAL(info) << " Both TDMA and FDMA GRP IDs are set. TDMA: " << tdma_grp_id << " FDMA: " << fdma_grp_id;
-          }
+  if (tdma_grp_id > 0) {
+    add_item_tag(0, nitems_written(0), pmt::intern("grp_id"), pmt::from_long(tdma_grp_id), d_tag_src);
+    tag_created = true;
+  }
+
+  if ((tdma_grp_id > 0) && (fdma_grp_id > 0)) {
+    BOOST_LOG_TRIVIAL(info) << " Both TDMA and FDMA GRP IDs are set. TDMA: " << tdma_grp_id << " FDMA: " << fdma_grp_id;
+  }
+  
+  return tag_created;
 }
 
 
@@ -211,6 +251,11 @@ p25_frame_assembler_impl::general_work (int noutput_items,
     }
   }
 
+  // Check for OTA alias tags after processing frames
+  bool alias_tag_created = check_alias_queue();
+
+  bool id_tag_created = send_grp_src_id();
+
   int amt_produce = 0;
 
       // If this block is being used for Trunking, then you want to skip all of this.
@@ -232,7 +277,7 @@ p25_frame_assembler_impl::general_work (int noutput_items,
             }
             output_queue.erase(output_queue.begin(), output_queue.begin() + amt_produce);
 
-            send_grp_src_id();
+            // send_grp_src_id();
 
             BOOST_LOG_TRIVIAL(trace) << "setting silence_frame_count " << silence_frame_count << " to d_silence_frames: " << d_silence_frames << std::endl;
             silence_frame_count = d_silence_frames;
@@ -245,6 +290,12 @@ p25_frame_assembler_impl::general_work (int noutput_items,
         }
         
         if (amt_produce == 0 && terminate_call.first) {
+          std::fill(out, out + 1, 0);
+          amt_produce = 1;
+        }
+        
+        // If alias or ID tag was created but no audio, send null packet to flush tags
+        if (amt_produce == 0 && (alias_tag_created || id_tag_created)) {
           std::fill(out, out + 1, 0);
           amt_produce = 1;
         }

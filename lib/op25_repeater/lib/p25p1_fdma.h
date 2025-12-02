@@ -98,6 +98,11 @@ namespace gr {
                 double error_history[20];
                 long curr_src_id;
                 long curr_grp_id;
+                long curr_alias_radio_id;
+                std::string curr_alias_text;
+                std::string curr_alias_source;
+                std::array<std::vector<uint8_t>, 10> alias_buffer;
+                
                 std::pair<bool,long> terminate_call;
                 const char *d_udp_host;
                 int  d_port;
@@ -136,6 +141,7 @@ namespace gr {
 
                 long get_curr_src_id();
                 long get_curr_grp_id();
+                std::tuple<long, std::string, std::string> get_alias_ota();
                 void reset_rx_status();
                 std::pair<bool,long> get_call_terminated();
                 void reset_call_terminated();

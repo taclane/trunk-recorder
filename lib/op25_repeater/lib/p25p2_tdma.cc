@@ -37,6 +37,7 @@
 #include "mbelib.h"
 #include "ambe.h"
 #include "crc16.h"
+#include "../../../trunk-recorder/unit_tags_ota.h"
 
 static const int BURST_SIZE = 180;
 static const int SUPERFRAME_SIZE = (12*BURST_SIZE);
@@ -118,7 +119,11 @@ p25p2_tdma::p25p2_tdma(const op25_audio& udp, log_ts& logger, int slotid, int de
 	next_keyid(0),
 	next_algid(0x80),
 	p2framer(),
-    crypt_algs(logger, debug, msgq_id)
+    crypt_algs(logger, debug, msgq_id),
+    src_id(-1),
+    grp_id(-1),
+    curr_alias_radio_id(-1),
+    curr_alias_text("")
 {
 	assert (slotid == 0 || slotid == 1);
 	mbe_initMbeParms (&cur_mp, &prev_mp, &enh_mp);
@@ -172,6 +177,14 @@ long p25p2_tdma::get_ptt_grp_id() {
 	long addr = grp_id;
     grp_id = -1;
 	return addr;
+}
+
+std::tuple<long, std::string, std::string> p25p2_tdma::get_alias_ota() {
+	std::tuple<long, std::string, std::string> result = std::make_tuple(curr_alias_radio_id, curr_alias_text, curr_alias_source);
+	curr_alias_radio_id = -1;
+	curr_alias_text = "";
+	curr_alias_source = "";
+	return result;
 }
 
 p25p2_tdma::~p25p2_tdma()	// destructor
@@ -387,6 +400,44 @@ void p25p2_tdma::decode_mac_msg(const uint8_t byte_buf[], const unsigned int len
 
 		if (d_debug >= 10) {
 			fprintf(stderr, "mco=%01x/%02x(0x%02x), len=%d", b1b2, mco, op, msg_len);
+		}
+
+		// Check for Motorola Talker Alias messages (Phase 2 TDMA)
+		if (op == 145 && mfid == 0x90) {  // 0x91 = Motorola Talker Alias Header
+			// Extract message count from header byte 5 (full byte, not bits)
+			if (msg_len >= 6) {
+				int messages = byte_buf[msg_ptr + 5];
+				// Initialize alias buffer
+				alias_buffer[0].assign(byte_buf + msg_ptr, byte_buf + msg_ptr + msg_len);
+				for (int i = 1; i <= messages && i < 10; i++) {
+					alias_buffer[i] = std::vector<uint8_t>(17, 0);
+				}
+			}
+		} else if (op == 149 && mfid == 0x90) {  // 0x95 = Motorola Talker Alias Data Block
+			// Extract block number from data block byte 3 (full byte)
+			if (msg_len >= 4 && alias_buffer[0].size() >= 6) {
+				int messages = alias_buffer[0][5];
+				int block_num = byte_buf[msg_ptr + 3];
+				
+				if (block_num > 0 && block_num < 10) {
+					alias_buffer[block_num].assign(byte_buf + msg_ptr, byte_buf + msg_ptr + msg_len);
+					
+					// When all blocks received, decode the alias
+					if (block_num == messages && messages > 0) {
+						OTAAlias result = UnitTagsOTA::decode_motorola_alias_p2(alias_buffer, messages);
+
+						if (result.success && !result.alias.empty()) {
+							// Store in member variables
+							curr_alias_radio_id = result.radio_id;
+							curr_alias_text = result.alias;
+							curr_alias_source = result.source;
+							// Send alias as JSON message downstream to be processed by recorder
+							// std::string s = "{\"alias\": \"" + result.alias + "\", \"radio_id\": " + std::to_string(result.radio_id) + ", \"source\": \"" + result.source + "\"}";
+							// send_msg(s, M_P25_JSON_DATA);
+						}
+					}
+				}
+			}
 		}
 
 		// Generic message processing

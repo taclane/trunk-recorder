@@ -14,5 +14,6 @@ public:
   void load_unit_tags(std::string filename);
   std::string find_unit_tag(long unitID);
   void add(std::string pattern, std::string tag);
+  bool addFront(long unitID, std::string tag, std::string source = "");
 };
 #endif // UNIT_TAGS_H

@@ -62,7 +62,8 @@ namespace gr {
   pmt::pmt_t d_tag_src;
   // internal functions
 
-    void send_grp_src_id();
+    bool send_grp_src_id();
+    bool check_alias_queue();
     void set_xormask(const char*p) ;
     void set_nac(int nac) ;
     void set_slotid(int slotid) ;

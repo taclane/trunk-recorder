@@ -40,6 +40,7 @@
 #include "rs.h"
 #include "p25_crypt_algs.h"
 #include "imbe_vocoder/imbe_vocoder.h"
+#include "../../../trunk-recorder/unit_tags_ota.h"
 
 namespace gr {
     namespace op25_repeater {
@@ -216,6 +217,10 @@ namespace gr {
             logts(logger),
             crypt_algs(logger, debug, msgq_id),
             ess_keyid(0),
+            curr_src_id(-1),
+            curr_grp_id(-1),
+            curr_alias_radio_id(-1),
+            curr_alias_text(""),
             ess_algid(0x80),
             vf_tgid(0),
 			terminate_call(std::pair<bool,long>(false,0)),
@@ -260,6 +265,14 @@ namespace gr {
             curr_src_id = -1;
             // This makes it easy to tell when a new Src Address has been received, all other times it will be -1
 			return addr;
+		}
+		
+		std::tuple<long, std::string, std::string> p25p1_fdma::get_alias_ota() {
+			std::tuple<long, std::string, std::string> result = std::make_tuple(curr_alias_radio_id, curr_alias_text, curr_alias_source);
+			curr_alias_radio_id = -1;
+			curr_alias_text = "";
+			curr_alias_source = "";
+			return result;
 		}
 		void p25p1_fdma::clear() {
 			p1voice_decode.clear();
@@ -497,6 +510,54 @@ namespace gr {
                             send_msg(s, -3);
                             if (d_debug >= 10)
                                 fprintf(stderr, ", srcaddr=%d, grpaddr=%d", srcaddr, grpaddr);
+                            break;
+                        }
+                        case 0x15: { // Motorola alias header
+                            if (lcw[1] == 0x90) {
+                                int messages = lcw[4] & 0xf;
+                                int id_sequence = lcw[7] >> 4;
+                                // initialize the alias buffer
+                                //alias_buffer.resize(messages + 1);
+                                alias_buffer[0] = lcw;
+                                for (int i = 1; i <= messages; i++) {
+                                    alias_buffer[i] = std::vector<uint8_t>(9, 0);
+                                }
+                            }
+                            break;
+                        }
+                        case 0x17: { // Motorola alias messages
+                            if (lcw[1] == 0x90) {
+                                // get message count
+                                int messages = 0;
+                                if (alias_buffer[0].size() >= 5) {
+                                    messages = alias_buffer[0][4] & 0xf;
+                                }
+
+                                int message = lcw[2] & 0xf;
+                                // int id_sequence = lcw[3] >> 4;
+
+                                // Validate message index is within bounds
+                                if (message >0 && message < 10) {
+                                    alias_buffer[message] = lcw;
+
+                                    // When all messages received, decode the alias
+                                    if (message == messages && messages > 0 && messages < (int)alias_buffer.size()) {
+                                        OTAAlias result = UnitTagsOTA::decode_motorola_alias(alias_buffer, messages);
+                                        
+                                        if (result.success && !result.alias.empty()) {
+                                            // Store in member variables
+                                            curr_alias_radio_id = result.radio_id;
+                                            curr_alias_text = result.alias;
+                                            curr_alias_source = result.source;
+                                            // Send alias, radio_id, and source as JSON message downstream to be processed by recorder
+                                            // std::string alias_json = "{\"alias\": \"" + result.alias + 
+                                            //                        "\", \"radio_id\": " + std::to_string(result.radio_id) + 
+                                            //                        ", \"source\": \"" + result.source + "\"}";
+                                            // send_msg(alias_json, M_P25_JSON_DATA);
+                                        }
+                                    }
+                                }
+                            }
                             break;
                         }
                     }

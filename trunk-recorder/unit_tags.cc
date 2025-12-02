@@ -104,3 +104,31 @@ void UnitTags::add(std::string pattern, std::string tag) {
   UnitTag *unit_tag = new UnitTag(pattern, tag);
   unit_tags.push_back(unit_tag);
 }
+
+bool UnitTags::addFront(long unitID, std::string tag, std::string source) {
+  // Create exact match pattern for this specific unit ID
+  std::string pattern = "^" + std::to_string(unitID) + "$";
+  
+  // Check if this unit already has a tag
+  std::string existing_tag = find_unit_tag(unitID);
+  if (!existing_tag.empty()) {
+    // Unit already has a tag, don't override
+    BOOST_LOG_TRIVIAL(debug) << "Unit " << unitID << " already has tag '" << existing_tag << "', not adding OTA alias '" << tag << "'";
+    return false;
+  }
+  
+  // Add to front of list so it takes precedence
+  UnitTag *unit_tag = new UnitTag(pattern, tag);
+  unit_tags.insert(unit_tags.begin(), unit_tag);
+
+  // write the tags to the unit_tags.csv file for persistence, include source in third field and timestamp in fourth
+  std::ofstream out("unit_tags_OTA.csv", std::ios::app);
+  if (out.is_open()) {
+    out << unitID << "," << tag << "," << source << "," << std::time(nullptr) << std::endl;
+    out.close();
+  } else {
+    BOOST_LOG_TRIVIAL(error) << "Failed to open unit_tags.csv for writing OTA alias.";
+  }
+  
+  return true;
+}

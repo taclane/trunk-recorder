@@ -1,0 +1,401 @@
+// Handling utilities for OTA (Over-The-Air) unit tags
+// Motorola Alias Algorythm - Copyright 2024 Ilya Smirnov / @ilyacodes. All rights reserved.
+
+#include "unit_tags_ota.h"
+
+#include <boost/log/trivial.hpp>
+#include <sstream>
+#include <iomanip>
+#include <map>
+#include <array>
+
+// OTA Motorola alias decoding - main entry point
+OTAAlias UnitTagsOTA::decode_motorola_alias(const std::array<std::vector<uint8_t>, 10>& alias_buffer, int messages) {
+  // Validate input
+  if (messages <= 0 || messages >= (int)alias_buffer.size()) {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: invalid message count " << messages;
+    return OTAAlias();
+  }
+
+  // Assemble the payload from all message fragments
+  std::string payload_hex = assemble_payload(alias_buffer, messages);
+  if (payload_hex.length() < 18) {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: assembled payload too short (" << payload_hex.length() << " chars)";
+    return OTAAlias();
+  }
+
+  // Extract components
+  std::string wacn = payload_hex.substr(0, 5);
+  std::string sys = payload_hex.substr(5, 3);
+  std::string radio = payload_hex.substr(8, 6);
+
+  // Lookup alias length based on code
+  static const std::map<std::string, int> length_lookup = {
+    {"94", 1}, {"32", 2}, {"95", 3}, {"9d", 4}, {"1b", 5}, {"77", 6}, {"b5", 7},
+    {"6e", 8}, {"24", 9}, {"61", 10}, {"2d", 11}, {"7d", 12}, {"83", 13}, {"29", 14}
+  };
+
+  if (payload_hex.length() < 16) {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: payload too short for length code";
+    return OTAAlias();
+  }
+
+  std::string length_code = payload_hex.substr(14, 2);
+  auto it = length_lookup.find(length_code);
+  int alias_len = (it != length_lookup.end()) ? it->second : 0;
+
+  if (alias_len == 0) {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: unknown alias length code: " << length_code;
+    return OTAAlias();
+  }
+
+  size_t required_len = 14 + alias_len * 4 + 4;
+  if (payload_hex.length() < required_len) {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: payload too short for alias length " << alias_len;
+    return OTAAlias();
+  }
+
+  std::string alias_code = payload_hex.substr(14, alias_len * 4);
+  std::string checksum = payload_hex.substr(14 + alias_len * 4, 4);
+
+  // Convert radio ID to decimal
+  unsigned long radio_decimal = std::stoul(radio, nullptr, 16);
+
+  BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: WACN: " << wacn << ", SYS: " << sys << ", Radio: " << radio_decimal << " (0x" << radio << ")";
+  BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: Alias Length: " << alias_len << ", Code: " << alias_code << ", Checksum: " << checksum;
+
+  // Validate CRC
+  std::string crc_payload = wacn + sys + radio + alias_code;
+  if (!validate_crc(crc_payload, checksum)) {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: CRC-16/GSM check failed";
+    return OTAAlias();
+  }
+
+  BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: CRC-16/GSM check passed";
+
+  // Convert hex string to bytes
+  std::vector<int8_t> payload_bytes;
+  for (size_t i = 0; i + 1 < crc_payload.length(); i += 2) {
+    std::istringstream iss(crc_payload.substr(i, 2));
+    int byte;
+    if (iss >> std::hex >> byte) {
+      payload_bytes.push_back(static_cast<int8_t>(byte));
+    } else {
+      BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: failed to parse hex at position " << i;
+      return OTAAlias();
+    }
+  }
+
+  // Need at least 8 bytes (7 byte offset + 1 byte minimum encoded data)
+  if (payload_bytes.size() < 8) {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: payload too short for decoding (" << payload_bytes.size() << " bytes)";
+    return OTAAlias();
+  }
+
+  // Extract encoded portion (skip first 7 bytes)
+  std::vector<int8_t> encoded(payload_bytes.begin() + 7, payload_bytes.end());
+
+  // Decrypt the alias text
+  std::string alias = decrypt_alias(encoded);
+
+  if (!alias.empty()) {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: Decoded alias: '" << alias << "' for radio " << radio_decimal << " (0x" << radio << ")";
+    return OTAAlias(radio_decimal, alias, "MotoP25_FDMA");
+  }
+
+  return OTAAlias();
+}
+
+// Assemble payload hex string from message buffer fragments
+std::string UnitTagsOTA::assemble_payload(const std::array<std::vector<uint8_t>, 10>& alias_buffer, int messages) {
+  std::stringstream ss;
+
+  for (int i = 1; i <= messages; i++) {
+    if (alias_buffer[i].size() < 9) {
+      BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: alias_buffer[" << i << "] too small";
+      return "";
+    }
+
+    ss << std::hex << std::setw(1) << std::setfill('0') << (int)(alias_buffer[i][3] & 0xf);
+    for (int j = 4; j <= 8; j++) {
+      ss << std::hex << std::setw(2) << std::setfill('0') << (int)(alias_buffer[i][j]);
+    }
+  }
+
+  return ss.str();
+}
+
+// Phase 2 TDMA: Assemble payload from 17-byte MAC PDU messages
+// Header (op 145): bytes 4-16 contain first 13 bytes of payload
+// Data blocks (op 149): bytes 4-16 contain 13 bytes each
+// Note: Byte 4 upper nibble contains sequence ID which must be stripped
+std::string UnitTagsOTA::assemble_payload_p2(const std::array<std::vector<uint8_t>, 10>& alias_buffer, int messages) {
+  std::stringstream ss;
+
+  // Extract from header (block 0) - bytes 4-16 (13 bytes)
+  if (alias_buffer[0].size() < 17) {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: header too small (" << alias_buffer[0].size() << " bytes)";
+    return "";
+  }
+  // Byte 4: strip sequence ID from upper nibble, keep only lower nibble
+  // ss << std::hex << std::setw(1) << std::setfill('0') << (int)(alias_buffer[0][4] & 0xf);
+  // Bytes 5-16: full bytes
+  for (int j = 4; j < 17; j++) {
+  // for (int j = 5; j < 17; j++) {
+      ss << std::hex << std::setw(2) << std::setfill('0') << (int)(alias_buffer[0][j]);
+  }
+
+  // Extract from data blocks 1 to N - bytes 4-16 (13 bytes each)
+  for (int i = 1; i <= messages; i++) {
+    if (alias_buffer[i].size() < 17) {
+      BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: alias_buffer[" << i << "] too small (" << alias_buffer[i].size() << " bytes)";
+      return "";
+    }
+    // Byte 4: strip sequence ID from upper nibble, keep only lower nibble
+    ss << std::hex << std::setw(1) << std::setfill('0') << (int)(alias_buffer[i][4] & 0xf);
+    // Bytes 5-16: full bytes
+    for (int j = 5; j < 17; j++) {
+      ss << std::hex << std::setw(2) << std::setfill('0') << (int)(alias_buffer[i][j]);
+    }
+  }
+
+  return ss.str();
+}
+
+// Phase 2 TDMA alias decode entry point
+OTAAlias UnitTagsOTA::decode_motorola_alias_p2(const std::array<std::vector<uint8_t>, 10>& alias_buffer, int messages) {
+  // Validate input
+  if (messages <= 0 || messages >= (int)alias_buffer.size()) {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: invalid message count " << messages;
+    return OTAAlias();
+  }
+
+  // Assemble the payload from all message fragments using P2 format
+  std::string payload_hex = assemble_payload_p2(alias_buffer, messages);
+  if (payload_hex.length() < 18) {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: assembled payload too short (" << payload_hex.length() << " chars)";
+    return OTAAlias();
+  }
+
+// remove the first ten characters of the payload
+payload_hex = payload_hex.substr(10);
+
+// display the payload here
+
+  BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: Assembled Payload: " << payload_hex;
+
+// Extract components (same structure as Phase 1 after assembly)
+  std::string wacn = payload_hex.substr(0, 5);
+  std::string sys = payload_hex.substr(5, 3);
+  std::string radio = payload_hex.substr(8, 6);
+
+  // Lookup alias length based on code
+  static const std::map<std::string, int> length_lookup = {
+    {"94", 1}, {"32", 2}, {"95", 3}, {"9d", 4}, {"1b", 5}, {"77", 6}, {"b5", 7},
+    {"6e", 8}, {"24", 9}, {"61", 10}, {"2d", 11}, {"7d", 12}, {"83", 13}, {"29", 14}
+  };
+
+  if (payload_hex.length() < 16) {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: payload too short for length code";
+    return OTAAlias();
+  }
+
+  std::string length_code = payload_hex.substr(14, 2);
+  auto it = length_lookup.find(length_code);
+  int alias_len = (it != length_lookup.end()) ? it->second : 0;
+
+  if (alias_len == 0) {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: unknown alias length code: " << length_code;
+    return OTAAlias();
+  }
+
+  size_t required_len = 14 + alias_len * 4 + 4;
+  if (payload_hex.length() < required_len) {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: payload too short for alias length " << alias_len;
+    return OTAAlias();
+  }
+
+  std::string alias_code = payload_hex.substr(14, alias_len * 4);
+  std::string checksum = payload_hex.substr(14 + alias_len * 4, 4);
+
+  // Convert radio ID to decimal
+  unsigned long radio_decimal = std::stoul(radio, nullptr, 16);
+
+  BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: WACN: " << wacn << ", SYS: " << sys << ", Radio: " << radio_decimal << " (0x" << radio << ")";
+  BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: Alias Length: " << alias_len << ", Code: " << alias_code << ", Checksum: " << checksum;
+
+  // Validate CRC
+  std::string crc_payload = wacn + sys + radio + alias_code;
+  if (!validate_crc(crc_payload, checksum)) {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: CRC-16/GSM check failed for " << crc_payload;
+    return OTAAlias();
+  }
+
+  BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: CRC-16/GSM check passed";
+
+  // Convert hex string to bytes
+  std::vector<int8_t> payload_bytes;
+  for (size_t i = 0; i + 1 < crc_payload.length(); i += 2) {
+    std::istringstream iss(crc_payload.substr(i, 2));
+    int byte;
+    if (iss >> std::hex >> byte) {
+      payload_bytes.push_back(static_cast<int8_t>(byte));
+    } else {
+      BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: failed to parse hex at position " << i;
+      return OTAAlias();
+    }
+  }
+
+  // Need at least 8 bytes (7 byte offset + 1 byte minimum encoded data)
+  if (payload_bytes.size() < 8) {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: payload too short for decoding (" << payload_bytes.size() << " bytes)";
+    return OTAAlias();
+  }
+
+  // Extract encoded portion (skip first 7 bytes)
+  std::vector<int8_t> encoded(payload_bytes.begin() + 7, payload_bytes.end());
+
+  BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: Encoded data size: " << encoded.size() << " bytes";
+
+  // Decrypt the alias text (same algorithm as Phase 1)
+  std::string alias = decrypt_alias(encoded);
+
+  if (!alias.empty()) {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: Decoded alias: '" << alias << "' for radio " << radio_decimal << " (0x" << radio << ")";
+    return OTAAlias(radio_decimal, alias, "MotoP25_TDMA");
+  } else {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: Decrypt returned empty alias";
+  }
+
+  return OTAAlias();
+}
+
+// Validate CRC-16/GSM checksum
+bool UnitTagsOTA::validate_crc(const std::string& payload_hex, const std::string& checksum_hex) {
+  // Convert hex string to bytes
+  std::vector<int8_t> payload_bytes;
+  for (size_t i = 0; i + 1 < payload_hex.length(); i += 2) {
+    std::istringstream iss(payload_hex.substr(i, 2));
+    int byte;
+    if (iss >> std::hex >> byte) {
+      payload_bytes.push_back(static_cast<int8_t>(byte));
+    } else {
+      return false;
+    }
+  }
+
+  // Calculate CRC-16/GSM
+  uint16_t crc = 0x0000;
+  for (size_t j = 0; j < payload_bytes.size(); ++j) {
+    uint8_t byte = static_cast<uint8_t>(payload_bytes[j]);
+    crc ^= byte << 8;
+
+    for (int i = 0; i < 8; i++) {
+      if (crc & 0x8000) {
+        crc = (crc << 1) ^ 0x1021;
+      } else {
+        crc <<= 1;
+      }
+    }
+  }
+  uint16_t crc_calc = ~crc & 0xFFFF;
+
+  // Parse expected checksum
+  uint16_t expected_crc = 0;
+  try {
+    expected_crc = std::stoi(checksum_hex, nullptr, 16);
+  } catch (const std::exception& e) {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: invalid checksum format: " << checksum_hex;
+    return false;
+  }
+
+  return (crc_calc == expected_crc);
+}
+
+// Decrypt Motorola alias using proprietary obfuscation scheme
+// 
+// Algorithm: Stateful stream cipher with substitution and modular arithmetic
+// Components:
+//   1. Linear Congruential Generator (LCG) for pseudo-random state
+//   2. Substitution table for byte permutation
+//   3. Modular multiplicative inverse for final transformation
+//
+// This is NOT cryptographically secure - it's obfuscation, not encryption.
+std::string UnitTagsOTA::decrypt_alias(const std::vector<int8_t>& encoded) {
+
+  static const uint8_t SUBSTITUTION_TABLE[256] = {
+    0xd2, 0xf6, 0xd4, 0x2b, 0x63, 0x49, 0x94, 0x5e, 0xa7, 0x5c, 0x70, 0x69, 0xf7, 0x08, 0xb1, 0x7d,
+    0x38, 0xcf, 0xcc, 0xd8, 0x51, 0x8f, 0xd5, 0x93, 0x6a, 0xf3, 0xef, 0x7e, 0xfb, 0x64, 0xf4, 0x35,
+    0x27, 0x07, 0x31, 0x14, 0x87, 0x98, 0x76, 0x34, 0xca, 0x92, 0x33, 0x1b, 0x4f, 0x8c, 0x09, 0x40,
+    0x32, 0x36, 0x77, 0x12, 0xd3, 0xc3, 0x01, 0xab, 0x72, 0x81, 0x95, 0xc9, 0xc0, 0xe9, 0x65, 0x52,
+    0x24, 0x30, 0x1c, 0xdb, 0x88, 0xe8, 0x97, 0x9d, 0x58, 0x26, 0x04, 0x39, 0xac, 0x2a, 0x9e, 0xaa,
+    0x25, 0xd7, 0xce, 0xeb, 0x96, 0xf5, 0x0e, 0x8d, 0xdc, 0xa9, 0x2f, 0xdd, 0x1f, 0xea, 0x91, 0xb7,
+    0xd6, 0x89, 0x8b, 0xd1, 0xb0, 0x99, 0x13, 0x7a, 0xe7, 0x9a, 0xb5, 0x86, 0xff, 0x46, 0x85, 0xb2,
+    0x73, 0xda, 0xbf, 0xd0, 0x71, 0xcb, 0x4d, 0x80, 0x15, 0x67, 0x16, 0x1a, 0x20, 0x8e, 0x45, 0x3e,
+    0xf2, 0x2e, 0x66, 0x90, 0x74, 0x8a, 0x6f, 0x78, 0xbb, 0x53, 0x03, 0x11, 0x68, 0xcd, 0x44, 0x17,
+    0x28, 0x5f, 0x1e, 0x84, 0x75, 0x79, 0x6e, 0x9b, 0x2c, 0xbe, 0x62, 0x2d, 0xf1, 0x7c, 0xb8, 0x83,
+    0xd9, 0x4e, 0x6d, 0x02, 0x61, 0x3d, 0xa8, 0x06, 0xb9, 0xf8, 0x9c, 0x37, 0x3a, 0x23, 0xc1, 0x50,
+    0xed, 0x9f, 0xaf, 0x3b, 0xbd, 0x82, 0xba, 0xa0, 0xdf, 0xc2, 0x47, 0x22, 0xf0, 0xee, 0xa1, 0xfe,
+    0xa2, 0x10, 0x5b, 0x48, 0x57, 0xa3, 0x05, 0x60, 0x7b, 0x0d, 0xf9, 0x6c, 0xb3, 0x56, 0x4c, 0xbc,
+    0x29, 0xa4, 0x0f, 0xec, 0xb6, 0xa5, 0xa6, 0x3c, 0x7f, 0x6b, 0xb4, 0x21, 0xad, 0xae, 0xc4, 0xc8,
+    0xc5, 0x5d, 0xde, 0xe0, 0x1d, 0x19, 0x4b, 0xc6, 0x0c, 0x3f, 0x5a, 0xc7, 0xe1, 0x59, 0x55, 0x54,
+    0x4a, 0x43, 0x42, 0xe2, 0xe3, 0xfa, 0x00, 0xe4, 0xe5, 0x18, 0x41, 0x0b, 0x0a, 0xe6, 0xfc, 0xfd,
+  };
+
+  std::vector<uint8_t> decoded(encoded.size(), 0);
+  
+ 
+  // Accumulator: initialized with output buffer length
+  uint16_t accumulator = static_cast<uint16_t>(decoded.size());
+
+  // Process each encoded byte
+  for (size_t i = 0; i < decoded.size(); ++i) {
+    uint8_t encoded_byte = static_cast<uint8_t>(encoded[i]);
+    
+    // Step 1: Linear Congruential Generator - generates pseudo-random value from accumulator
+    uint16_t lcg_value = accumulator * 293 + 0x72E9;
+
+    // Step 2: Substitution table lookup - permute the encoded byte
+    uint8_t substituted = SUBSTITUTION_TABLE[encoded_byte];
+    
+    // Step 3: XOR-like operation with LCG high byte
+    uint8_t intermediate = substituted - static_cast<uint8_t>(lcg_value >> 8);
+
+    // Step 4: Modular multiplicative inverse (mod 256)
+    // Sets LSB to ensure odd number (required for inverse to exist in mod 256)
+    uint8_t modulus = static_cast<uint8_t>(lcg_value | 0x1);
+    
+    // Find x where: x * modulus ≡ 1 (mod 256)
+    // Uses repeated addition instead of Extended Euclidean Algorithm
+    uint8_t inverse = 1;
+    uint8_t test_val = modulus;
+    
+    while (test_val != 1 && inverse != 255) {
+      test_val += modulus * 2;
+      inverse += 2;
+    }
+
+    // Step 5: Final decryption - multiply by modular inverse
+    decoded[i] = intermediate * inverse;
+
+    // Step 6: Update state for next iteration
+    accumulator += encoded_byte + 1;
+  }
+
+  // Reconstruct alias string from decoded bytes
+  // Data is stored as big-endian 16-bit characters (UTF-16 BE subset)
+  std::string alias;
+  alias.reserve(decoded.size() / 2);  // Pre-allocate for efficiency
+  
+  for (size_t i = 0; i + 1 < decoded.size(); i += 2) {
+    uint16_t codepoint = (static_cast<uint16_t>(decoded[i]) << 8) | decoded[i + 1];
+    
+    // Only accept printable ASCII (0x01-0x7F)
+    // This filters out null terminators and extended characters
+    if (codepoint > 31 && codepoint < 128) {
+      alias += static_cast<char>(codepoint);
+    }
+  }
+
+  return alias;
+}
