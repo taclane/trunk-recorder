@@ -376,7 +376,7 @@ Call_Data_t Call_Concluder::create_call_data(Call *call, System *sys, Config con
   for (std::vector<Transmission>::iterator it = call_info.transmission_list.begin(); it != call_info.transmission_list.end();) {
     Transmission t = *it;
 
-    if (t.length < sys->get_min_tx_duration()) {
+    if (t.length < sys->get_min_tx_duration() && !call_info.encrypted) {
       if (!call_info.transmission_archive) {
         std::string loghdr = log_header( call_info.short_name, call_info.call_num, call_info.talkgroup_display , call_info.freq);
         BOOST_LOG_TRIVIAL(info) << loghdr << "Removing transmission less than " << sys->get_min_tx_duration() << " seconds. Actual length: " << t.length << ".";
@@ -469,7 +469,23 @@ void Call_Concluder::conclude_call(Call *call, System *sys, Config config) {
     remove_call_files(call_info);
     return;
   }
-  else if (call_info.transmission_list.size()== 0 && call_info.min_transmissions_removed == 0) {
+
+  // Handle encrypted calls: metadata only, no audio upload
+  if (call_info.encrypted) {
+    BOOST_LOG_TRIVIAL(info) << loghdr << "Encrypted call - capturing metadata only, removing audio";
+    
+    if (call_info.transmission_list.size() > 0 || call_info.min_transmissions_removed > 0) {
+      int result = create_call_json(call_info);
+      if (result < 0) {
+        BOOST_LOG_TRIVIAL(error) << loghdr << "Failed to create metadata JSON for encrypted call";
+      }
+    }
+    
+    remove_call_files(call_info);
+    return;
+  }
+
+  if (call_info.transmission_list.size() == 0 && call_info.min_transmissions_removed == 0) {
     BOOST_LOG_TRIVIAL(error) << loghdr << "No Transmissions were recorded!";
     return;
   }

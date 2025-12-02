@@ -409,6 +409,8 @@ bool load_config(string config_file, Config &config, gr::top_block_sptr &tb, std
 
         system->set_hideEncrypted(element.value("hideEncrypted", system->get_hideEncrypted()));
         BOOST_LOG_TRIVIAL(info) << "Hide Encrypted Talkgroups: " << system->get_hideEncrypted();
+        system->set_monitorEncrypted(element.value("monitorEncrypted", system->get_monitorEncrypted()));
+        BOOST_LOG_TRIVIAL(info) << "Monitor Encrypted Calls: " << system->get_monitorEncrypted();
         system->set_hideUnknown(element.value("hideUnknownTalkgroups", system->get_hideUnknown()));
         BOOST_LOG_TRIVIAL(info) << "Hide Unknown Talkgroups: " << system->get_hideUnknown();
         system->set_min_duration(element.value("minDuration", 0.0));

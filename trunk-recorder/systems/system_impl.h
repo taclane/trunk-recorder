@@ -228,6 +228,8 @@ public:
 
   bool get_hideEncrypted() override;
   void set_hideEncrypted(bool hideEncrypted) override;
+  bool get_monitorEncrypted() override;
+  void set_monitorEncrypted(bool monitorEncrypted) override;
 
   bool get_hideUnknown() override;
   void set_hideUnknown(bool hideUnknown) override;
@@ -257,6 +259,7 @@ public:
 private:
   TalkgroupDisplayFormat talkgroup_display_format;
   bool d_hideEncrypted;
+  bool d_monitorEncrypted;
   bool d_hideUnknown;
   bool d_multiSite;
   std::string d_multiSiteSystemName;

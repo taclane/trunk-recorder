@@ -51,18 +51,24 @@ bool start_recorder(Call *call, TrunkMessage message, Config &config, System *sy
   }
 
   if (call->get_encrypted() == true || (talkgroup && (talkgroup->mode.compare("E") == 0 || talkgroup->mode.compare("TE") == 0 || talkgroup->mode.compare("DE") == 0))) {
-    call->set_state(MONITORING);
-    call->set_monitoring_state(ENCRYPTED);
-    if (sys->get_hideEncrypted() == false) {
-      long unit_id = call->get_current_source_id();
-      std::string tag = sys->find_unit_tag(unit_id);
-      if (tag != "") {
-        tag = " (\033[0;34m" + tag + "\033[0m)";
-      }
-      std::string loghdr = log_header( sys->get_short_name(), call->get_call_num(), call->get_talkgroup_display(), call->get_freq());
-      BOOST_LOG_TRIVIAL(info) << loghdr << "\u001b[31mNot Recording: ENCRYPTED\u001b[0m - src: " << unit_id << tag;
+    if (talkgroup && (talkgroup->mode.compare("E") == 0 || talkgroup->mode.compare("TE") == 0 || talkgroup->mode.compare("DE") == 0)) {
+      call->set_encrypted(true);
     }
-    return false;
+    
+    if (!sys->get_monitorEncrypted()) {
+      call->set_state(MONITORING);
+      call->set_monitoring_state(ENCRYPTED);
+      if (sys->get_hideEncrypted() == false) {
+        long unit_id = call->get_current_source_id();
+        std::string tag = sys->find_unit_tag(unit_id);
+        if (tag != "") {
+          tag = " (\033[0;34m" + tag + "\033[0m)";
+        }
+        std::string loghdr = log_header( sys->get_short_name(), call->get_call_num(), call->get_talkgroup_display(), call->get_freq());
+        BOOST_LOG_TRIVIAL(info) << loghdr << "\u001b[31mNot Recording: ENCRYPTED\u001b[0m - src: " << unit_id << tag;
+      }
+      return false;
+    }
   }
 
   for (vector<Source *>::iterator it = sources.begin(); it != sources.end(); it++) {
@@ -503,8 +509,8 @@ void handle_call_grant(TrunkMessage message, System *sys, bool grant_message, Co
         grant_call_data = boost::format("\u001b[34m%sC\u001b[0m %s/%s ") % call->get_call_num() % sys->get_multiSiteSystemName() % sys->get_multiSiteSystemNumber();
       }
     }
-    std::string loghdr = log_header( call->get_short_name(), call->get_call_num(), call->get_talkgroup_display(), call->get_freq());
     if (superseding_grant) {
+      std::string loghdr = log_header( call->get_short_name(), call->get_call_num(), call->get_talkgroup_display(), call->get_freq());
 
       BOOST_LOG_TRIVIAL(info) << loghdr << "\u001b[36mSuperseding Grant\u001b[0m - Stopping original call: " << original_call_data << "- Superseding call: " << grant_call_data;
       // Attempt to start a new call on the preferred NAC.
@@ -520,12 +526,14 @@ void handle_call_grant(TrunkMessage message, System *sys, bool grant_message, Co
         BOOST_LOG_TRIVIAL(info) << loghdr << "\u001b[36mCould not start Superseding recorder.\u001b[0m Continuing original call: " << original_call->get_call_num() << "C";
       }
     } else if (duplicate_grant) {
+      std::string loghdr = log_header( call->get_short_name(), call->get_call_num(), call->get_talkgroup_display(), call->get_freq());
       call->set_state(MONITORING);
       call->set_monitoring_state(DUPLICATE);
       BOOST_LOG_TRIVIAL(info) << loghdr << "\u001b[36mDuplicate Grant\u001b[0m - Not recording: " << grant_call_data << "- Original call: " << original_call_data;
     } else {
       recording_started = start_recorder(call, message, config, sys, sources);
       if (recording_started && !grant_message) {
+        std::string loghdr = log_header( call->get_short_name(), call->get_call_num(), call->get_talkgroup_display(), call->get_freq());
         BOOST_LOG_TRIVIAL(info) << loghdr << "\u001b[36mThis was an UPDATE\u001b[0m";
       }
     }
@@ -552,6 +560,15 @@ void handle_call_update(TrunkMessage message, System *sys, std::vector<Call *> &
     // BOOST_LOG_TRIVIAL(info) << "TG: " << call->get_talkgroup() << " | " << message.talkgroup << " sys num: " << call->get_sys_num() << " | " << message.sys_num << " freq: " << call->get_freq() << " | " << message.freq << " TDMA Slot" << call->get_tdma_slot() << " | " << message.tdma_slot << " TDMA: " << call->get_phase2_tdma() << " | " << message.phase2_tdma;
     if ((call->get_talkgroup() == message.talkgroup) && (call->get_sys_num() == message.sys_num) && (call->get_freq() == message.freq) && (call->get_tdma_slot() == message.tdma_slot) && (call->get_phase2_tdma() == message.phase2_tdma)) {
       call_found = true;
+
+      if (message.encrypted) {
+        call->set_encrypted(true);
+      } else {
+        Talkgroup *talkgroup = sys->find_talkgroup(message.talkgroup);
+        if (talkgroup && (talkgroup->mode.compare("E") == 0 || talkgroup->mode.compare("TE") == 0 || talkgroup->mode.compare("DE") == 0)) {
+          call->set_encrypted(true);
+        }
+      }
 
       bool source_updated = call->update(message);
       if (source_updated) {
