@@ -7,11 +7,14 @@
 #include <boost/tokenizer.hpp>
 #include <boost/regex.hpp>
 
-#include "csv_helper.h"
+// #include "csv_helper.h"
+#include <csv-parser/csv.hpp>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+
+using namespace csv;
 
 UnitTags::UnitTags() {}
 
@@ -20,59 +23,31 @@ void UnitTags::load_unit_tags(std::string filename) {
     return;
   }
 
-  std::ifstream in(filename.c_str());
-
-  if (!in.is_open()) {
-    BOOST_LOG_TRIVIAL(error) << "Error Opening Unit Tag File: " << filename << std::endl;
-    return;
-  }
-
-  boost::escaped_list_separator<char> sep("\\", ",\t", "\"");
-  typedef boost::tokenizer<boost::escaped_list_separator<char>> t_tokenizer;
-
-  std::vector<std::string> vec;
-  std::string line;
-
-  int lines_read = 0;
-  int lines_pushed = 0;
-
-  while (!safeGetline(in, line).eof()) // this works with \r, \n, or \r\n
-  {
-    if (line.size() && (line[line.size() - 1] == '\r')) {
-      line = line.substr(0, line.size() - 1);
+  CSVFormat format;
+  format.trim({' ', '\t'});
+  format.header_row(-1);  // No header row expected
+  
+  try {
+    CSVReader reader(filename, format);
+    
+    int lines_loaded = 0;
+    for (CSVRow &row : reader) {
+      if (row.size() < 2) {
+        continue;
+      }
+      
+      // First column: unit ID pattern (decimal or regex)
+      // Second column: tag/alias
+      std::string pattern = row[0].get<>();
+      std::string tag = row[1].get<>();
+      
+      add(pattern, tag);
+      lines_loaded++;
     }
-
-    lines_read++;
-
-    if (line == "")
-      continue;
-
-    t_tokenizer tok(line, sep);
-
-    // Unit Tag configuration columns:
-    //
-    // [0] - talkgroup number
-    // [1] - tag
-
-    vec.assign(tok.begin(), tok.end());
-
-    if (vec.size() < 2) {
-      BOOST_LOG_TRIVIAL(error) << "Malformed talkgroup entry at line " << lines_read << ".";
-      continue;
-    }
-
-    add(vec[0].c_str(), vec[1].c_str());
-
-    lines_pushed++;
-  }
-
-  if (lines_pushed != lines_read) {
-    // The parser above is pretty brittle. This will help with debugging it, for
-    // now.
-    BOOST_LOG_TRIVIAL(error) << "Warning: skipped " << lines_read - lines_pushed << " of " << lines_read << " unit tag entries! Invalid format?";
-    BOOST_LOG_TRIVIAL(error) << "The format is very particular. See  https://github.com/robotastic/trunk-recorder for example input.";
-  } else {
-    BOOST_LOG_TRIVIAL(info) << "Read " << lines_pushed << " unit tags.";
+    
+    BOOST_LOG_TRIVIAL(info) << "Read " << lines_loaded << " unit tags.";
+  } catch (std::exception &e) {
+    BOOST_LOG_TRIVIAL(error) << "Error reading Unit Tag File: " << filename << " - " << e.what();
   }
 }
 
@@ -105,29 +80,78 @@ void UnitTags::add(std::string pattern, std::string tag) {
   unit_tags.push_back(unit_tag);
 }
 
+void UnitTags::load_unit_tags_ota(std::string filename) {
+  ota_filename = filename;
+  
+  if (filename == "") {
+    return;
+  }
+
+  // Check if file exists
+  std::ifstream test(filename);
+  if (!test.good()) {
+    return;  // File doesn't exist yet, that's ok
+  }
+  test.close();
+  
+  CSVFormat format;
+  format.trim({' ', '\t'});
+  format.header_row(-1);  // No header row
+  
+  try {
+    CSVReader reader(filename, format);
+    
+    int lines_loaded = 0;
+    for (CSVRow &row : reader) {
+      if (row.size() < 2) {
+        continue;
+      }
+      
+      // Format: unitID,tag[,source,timestamp]
+      std::string pattern = "^" + row[0].get<>() + "$";
+      std::string tag = row[1].get<>();
+      
+      UnitTag *unit_tag = new UnitTag(pattern, tag);
+      unit_tags.insert(unit_tags.begin(), unit_tag);
+      lines_loaded++;
+    }
+    
+    if (lines_loaded > 0) {
+      BOOST_LOG_TRIVIAL(info) << "Loaded " << lines_loaded << " OTA unit tags.";
+    }
+  } catch (std::exception &e) {
+    BOOST_LOG_TRIVIAL(error) << "Error reading OTA Unit Tag File: " << filename << " - " << e.what();
+  }
+}
+
 bool UnitTags::addFront(long unitID, std::string tag, std::string source) {
-  // Create exact match pattern for this specific unit ID
   std::string pattern = "^" + std::to_string(unitID) + "$";
   
   // Check if this unit already has a tag
   std::string existing_tag = find_unit_tag(unitID);
   if (!existing_tag.empty()) {
-    // Unit already has a tag, don't override
     BOOST_LOG_TRIVIAL(debug) << "Unit " << unitID << " already has tag '" << existing_tag << "', not adding OTA alias '" << tag << "'";
     return false;
   }
   
-  // Add to front of list so it takes precedence
+  // Add to front of list
   UnitTag *unit_tag = new UnitTag(pattern, tag);
   unit_tags.insert(unit_tags.begin(), unit_tag);
 
-  // write the tags to the unit_tags.csv file for persistence, include source in third field and timestamp in fourth
-  std::ofstream out("unit_tags_OTA.csv", std::ios::app);
-  if (out.is_open()) {
-    out << unitID << "," << tag << "," << source << "," << std::time(nullptr) << std::endl;
-    out.close();
-  } else {
-    BOOST_LOG_TRIVIAL(error) << "Failed to open unit_tags.csv for writing OTA alias.";
+  // Write to OTA file if configured
+  if (!ota_filename.empty()) {
+    try {
+      std::ofstream out(ota_filename, std::ios::app);
+      if (out.is_open()) {
+        CSVWriter<std::ofstream> writer(out);
+        writer << std::vector<std::string>{std::to_string(unitID), tag, source, std::to_string(std::time(nullptr))};
+        out.close();
+      } else {
+        BOOST_LOG_TRIVIAL(error) << "Failed to open " << ota_filename << " for writing OTA alias.";
+      }
+    } catch (std::exception &e) {
+      BOOST_LOG_TRIVIAL(error) << "Error writing to OTA file " << ota_filename << ": " << e.what();
+    }
   }
   
   return true;

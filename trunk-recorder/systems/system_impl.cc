@@ -332,6 +332,15 @@ void System_impl::set_unit_tags_file(std::string unit_tags_file) {
   this->unit_tags->load_unit_tags(unit_tags_file);
 }
 
+void System_impl::set_unit_tags_ota_file(std::string unit_tags_ota_file) {
+  this->unit_tags_ota_file = unit_tags_ota_file;
+  this->unit_tags->load_unit_tags_ota(unit_tags_ota_file);
+}
+
+std::string System_impl::get_unit_tags_ota_file() {
+  return this->unit_tags_ota_file;
+}
+
 void System_impl::set_custom_freq_table_file(std::string custom_freq_table_file) {
   this->custom_freq_table_file = custom_freq_table_file;
 }

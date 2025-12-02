@@ -8,10 +8,12 @@
 
 class UnitTags {
   std::vector<UnitTag *> unit_tags;
+  std::string ota_filename;
 
 public:
   UnitTags();
   void load_unit_tags(std::string filename);
+  void load_unit_tags_ota(std::string filename);
   std::string find_unit_tag(long unitID);
   void add(std::string pattern, std::string tag);
   bool addFront(long unitID, std::string tag, std::string source = "");

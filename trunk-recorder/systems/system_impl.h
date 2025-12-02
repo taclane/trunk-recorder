@@ -59,6 +59,7 @@ public:
   std::string talkgroups_file;
   std::string channel_file;
   std::string unit_tags_file;
+  std::string unit_tags_ota_file;
   std::string custom_freq_table_file;
   std::string short_name;
   std::string api_key;
@@ -185,6 +186,8 @@ public:
   void set_channel_file(std::string channel_file) override;
   bool has_channel_file() override;
   void set_unit_tags_file(std::string) override;
+  void set_unit_tags_ota_file(std::string) override;
+  std::string get_unit_tags_ota_file() override;
   void set_custom_freq_table_file(std::string custom_freq_table_file) override;
   std::string get_custom_freq_table_file() override;
   bool has_custom_freq_table_file() override;
