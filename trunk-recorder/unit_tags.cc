@@ -130,11 +130,14 @@ bool UnitTags::addFront(long unitID, std::string tag, std::string source) {
   // Check if this unit already has a tag
   std::string existing_tag = find_unit_tag(unitID);
   if (!existing_tag.empty()) {
-    BOOST_LOG_TRIVIAL(debug) << "Unit " << unitID << " already has tag '" << existing_tag << "', not adding OTA alias '" << tag << "'";
-    return false;
+    if (existing_tag == tag) {
+      BOOST_LOG_TRIVIAL(debug) << "Unit " << unitID << " has existing alias: '" << tag << "', skipping";
+      return false;
+    }
+    BOOST_LOG_TRIVIAL(debug) << "Unit " << unitID << " alias updated: '" << existing_tag << "' -> '" << tag << "'";
   }
   
-  // Add to front of list
+  // Add to front of list (takes precedence over older entries)
   UnitTag *unit_tag = new UnitTag(pattern, tag);
   unit_tags.insert(unit_tags.begin(), unit_tag);
 
