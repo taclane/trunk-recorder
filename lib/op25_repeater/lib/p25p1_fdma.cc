@@ -529,15 +529,18 @@ namespace gr {
                             if (lcw[1] == 0x90) {
                                 // get message count
                                 int messages = 0;
-                                if (alias_buffer[0].size() >= 5) {
+                                int header_sequence = -1;
+
+                                if (alias_buffer[0].size() >= 8) {
                                     messages = alias_buffer[0][4] & 0xf;
+                                    header_sequence = alias_buffer[0][7] >> 4;
                                 }
 
                                 int message = lcw[2] & 0xf;
-                                // int id_sequence = lcw[3] >> 4;
+                                int msg_sequence = lcw[3] >> 4;
 
                                 // Validate message index is within bounds
-                                if (message >0 && message < 10) {
+                                if ((message > 0 && message < 10) && (message <= messages) && (msg_sequence == header_sequence)) {
                                     alias_buffer[message] = lcw;
 
                                     // When all messages received, decode the alias

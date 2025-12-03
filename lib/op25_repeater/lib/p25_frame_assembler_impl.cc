@@ -172,7 +172,7 @@ bool p25_frame_assembler_impl::check_alias_queue() {
   return alias_created;
 }
 
-bool p25_frame_assembler_impl::send_grp_src_id() {
+void p25_frame_assembler_impl::send_grp_src_id() {
   bool tag_created = false;
   
   long tdma_src_id = -1;
@@ -213,8 +213,6 @@ bool p25_frame_assembler_impl::send_grp_src_id() {
   if ((tdma_grp_id > 0) && (fdma_grp_id > 0)) {
     BOOST_LOG_TRIVIAL(info) << " Both TDMA and FDMA GRP IDs are set. TDMA: " << tdma_grp_id << " FDMA: " << fdma_grp_id;
   }
-  
-  return tag_created;
 }
 
 
@@ -254,7 +252,6 @@ p25_frame_assembler_impl::general_work (int noutput_items,
   // Check for OTA alias tags after processing frames
   bool alias_tag_created = check_alias_queue();
 
-  bool id_tag_created = send_grp_src_id();
 
   int amt_produce = 0;
 
@@ -266,6 +263,10 @@ p25_frame_assembler_impl::general_work (int noutput_items,
         //BOOST_LOG_TRIVIAL(trace) << "P25 Frame Assembler -  output_queue: " << output_queue.size() << " noutput_items: " <<  noutput_items << " ninput_items: " << ninput_items[0];
 
         if (amt_produce > 0) {
+            // Must respect both the internal buffer limit AND the output buffer size GNU Radio allocated
+            if (amt_produce > noutput_items) {
+              amt_produce = noutput_items;
+            }
             if (amt_produce >= 32768) {
               BOOST_LOG_TRIVIAL(error) << "P25 Frame Assembler -  output_queue size: " << output_queue.size() << " max size: " << output_queue.max_size() << " limiting amt_produce to  32767 ";
               
@@ -277,7 +278,7 @@ p25_frame_assembler_impl::general_work (int noutput_items,
             }
             output_queue.erase(output_queue.begin(), output_queue.begin() + amt_produce);
 
-            // send_grp_src_id();
+            send_grp_src_id();
 
             BOOST_LOG_TRIVIAL(trace) << "setting silence_frame_count " << silence_frame_count << " to d_silence_frames: " << d_silence_frames << std::endl;
             silence_frame_count = d_silence_frames;
@@ -295,7 +296,7 @@ p25_frame_assembler_impl::general_work (int noutput_items,
         }
         
         // If alias or ID tag was created but no audio, send null packet to flush tags
-        if (amt_produce == 0 && (alias_tag_created || id_tag_created)) {
+        if (amt_produce == 0 && (alias_tag_created)) {  // || id_tag_created
           std::fill(out, out + 1, 0);
           amt_produce = 1;
         }

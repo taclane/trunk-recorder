@@ -317,10 +317,12 @@ void p25p2_tdma::handle_mac_end_ptt(const uint8_t byte_buf[], const unsigned int
         if (d_debug >= 10)
                 fprintf(stderr, "%s MAC_END_PTT: colorcd=0x%03x, srcaddr=%u, grpaddr=%u, rs_errs=%d\n", logts.get(d_msgq_id), colorcd, srcaddr, grpaddr, rs_errs);
 
-        op25audio.send_audio_flag(op25_audio::DRAIN);
-		terminate_call = std::pair<bool,long>(true, output_queue_decode.size());
-		// reset crypto parameters
-        reset_ess();
+		// ********* dev/id-fix
+        // op25audio.send_audio_flag(op25_audio::DRAIN);
+		// terminate_call = std::pair<bool,long>(true, output_queue_decode.size());
+		// // reset crypto parameters
+        // reset_ess();
+		// ********* dev/id-fix
 }
 
 void p25p2_tdma::handle_mac_idle(const uint8_t byte_buf[], const unsigned int len, const int rs_errs) 
@@ -356,6 +358,15 @@ void p25p2_tdma::handle_mac_hangtime(const uint8_t byte_buf[], const unsigned in
 
         if (d_debug >= 10)
                 fprintf(stderr, ", rs_errs=%d\n", rs_errs);
+
+		// ********* dev/id-fix
+		// P25 P2 is guaranteed to send MAC_HANGTIME at transmission termination.
+		// Relying on MAC_END_PTT can be insufficient, as it will not start a new transmission during call continuation scenarios.
+        op25audio.send_audio_flag(op25_audio::DRAIN);
+		terminate_call = std::pair<bool,long>(true, output_queue_decode.size());
+		// reset crypto parameters
+        reset_ess();
+		// ********* dev/id-fix
 }
 
 
@@ -375,11 +386,32 @@ void p25p2_tdma::decode_mac_msg(const uint8_t byte_buf[], const unsigned int len
         op   = (b1b2 << 6) + mco;
 		mfid = 0;
 
+		// ********* dev/id-fix
+		// Variables need to be defined outside of the Switch.
+		uint16_t grpaddr;
+		uint32_t srcaddr;
+		uint32_t wacn;
+		uint32_t sysid;
+		// ********* dev/id-fix
+
 		// Find message length using opcode handlers or lookup table
 		switch (op) {
 			case 0x00: // Null Information
 				msg_len = len_remaining;
 				break;
+			// ********* dev/id-fix
+            case 0x01: // Group Voice Channel User - Abbreviated
+				if(b1b2 == 0x0) {
+					msg_len = 7;
+
+					grpaddr = (byte_buf[msg_ptr+2] << 8) + byte_buf[msg_ptr+3];
+					srcaddr = (byte_buf[msg_ptr+4] << 16) + (byte_buf[msg_ptr+5] << 8) + byte_buf[msg_ptr+6];
+
+					src_id = srcaddr;
+					grp_id = grpaddr;
+				}
+				break;
+			// ********* dev/id-fix
 			case 0x08: // Null Avoid Zero Bias Message
 				msg_len = byte_buf[msg_ptr+1] & 0x3f;
 				break;
@@ -389,6 +421,23 @@ void p25p2_tdma::decode_mac_msg(const uint8_t byte_buf[], const unsigned int len
 			case 0x12: // Individual Paging with Priority
 				msg_len = (((byte_buf[msg_ptr+1] & 0x3) + 1) * 3) + 2;
 				break;
+			// ********* dev/id-fix
+			case 0x21: // Group Voice Channel User - Extended
+				if(b1b2 == 0x0) {
+					msg_len = 14;
+
+					grpaddr = (byte_buf[msg_ptr+2] << 8) + byte_buf[msg_ptr+3];
+					wacn = ((byte_buf[msg_ptr+7] << 12) + (byte_buf[msg_ptr+8] << 4) + (byte_buf[msg_ptr+9] >> 4)) & 0xFFFFF;
+					sysid = ((byte_buf[msg_ptr+9] & 0x0F) << 8) + byte_buf[msg_ptr+10];
+					srcaddr = (byte_buf[msg_ptr+11] << 16) + (byte_buf[msg_ptr+12] << 8) + byte_buf[msg_ptr+13];
+
+					// Need to discuss what to do for fully qualified radio IDs.
+					// Currently this uses only the Radio ID portion from Roaming Units.
+					src_id = srcaddr;
+					grp_id = grpaddr;
+				}
+                break;
+			// ********* dev/id-fix
 			default:
 				if (b1b2 == 0x2) {				// Manufacturer-specific ops have len field
 					mfid = byte_buf[msg_ptr+1];
@@ -414,12 +463,13 @@ void p25p2_tdma::decode_mac_msg(const uint8_t byte_buf[], const unsigned int len
 				}
 			}
 		} else if (op == 149 && mfid == 0x90) {  // 0x95 = Motorola Talker Alias Data Block
-			// Extract block number from data block byte 3 (full byte)
-			if (msg_len >= 4 && alias_buffer[0].size() >= 6) {
+			if (msg_len >= 4 && alias_buffer[0].size() >= 9) {
 				int messages = alias_buffer[0][5];
+				int header_sequence = alias_buffer[0][8] >> 4;
 				int block_num = byte_buf[msg_ptr + 3];
-				
-				if (block_num > 0 && block_num < 10) {
+				int msg_sequence = byte_buf[msg_ptr + 4] >> 4;
+
+				if ((block_num > 0 && block_num < 10) && (msg_sequence == header_sequence)) {
 					alias_buffer[block_num].assign(byte_buf + msg_ptr, byte_buf + msg_ptr + msg_len);
 					
 					// When all blocks received, decode the alias
