@@ -62,7 +62,6 @@ public:
 	void reset_call_terminated();
 	long get_ptt_src_id();
 	long get_ptt_grp_id();
-	std::tuple<long, std::string, std::string> get_alias_ota();
 private:
 	p25p2_sync sync;
 	p25p2_duid duid;
@@ -89,9 +88,6 @@ private:
 	std::pair<bool,long> terminate_call;
 	long src_id;
 	long grp_id;
-	long curr_alias_radio_id;
-	std::string curr_alias_text;
-	std::string curr_alias_source;
 	std::array<std::vector<uint8_t>, 10> alias_buffer;
 	const op25_audio& op25audio;
     log_ts& logts;

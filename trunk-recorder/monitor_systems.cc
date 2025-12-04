@@ -1,4 +1,5 @@
 #include "monitor_systems.h"
+#include "recorders/p25_recorder.h"
 using namespace std;
 
 volatile sig_atomic_t exit_flag = 0;
@@ -813,6 +814,22 @@ void process_message_queues(std::vector<System *> &systems) {
   }
 }
 
+// Process message queues for recorders associated with Calls
+void process_recorder_message_queues(std::vector<Call *> &calls) {
+  for (vector<Call *>::iterator it = calls.begin(); it != calls.end(); ++it) {
+    Call *call = *it;
+    if (call->get_state() == RECORDING) {
+      Recorder *recorder = call->get_recorder();
+      if (recorder && (recorder->get_type() == P25 || recorder->get_type() == P25C)) {
+        p25_recorder *p25_rec = dynamic_cast<p25_recorder *>(recorder);
+        if (p25_rec) {
+          p25_rec->process_message_queues();
+        }
+      }
+    }
+  }
+}
+
 int monitor_messages(Config &config, gr::top_block_sptr &tb, std::vector<Source *> &sources, std::vector<System *> &systems, std::vector<Call *> &calls) {
   gr::message::sptr msg;
 
@@ -854,6 +871,7 @@ int monitor_messages(Config &config, gr::top_block_sptr &tb, std::vector<Source 
     }
 
     process_message_queues(systems);
+    process_recorder_message_queues(calls);
 
     plugman_poll_one();
 

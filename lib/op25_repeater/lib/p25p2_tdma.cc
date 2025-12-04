@@ -37,7 +37,6 @@
 #include "mbelib.h"
 #include "ambe.h"
 #include "crc16.h"
-#include "../../../trunk-recorder/unit_tags_ota.h"
 
 static const int BURST_SIZE = 180;
 static const int SUPERFRAME_SIZE = (12*BURST_SIZE);
@@ -121,9 +120,7 @@ p25p2_tdma::p25p2_tdma(const op25_audio& udp, log_ts& logger, int slotid, int de
 	p2framer(),
     crypt_algs(logger, debug, msgq_id),
     src_id(-1),
-    grp_id(-1),
-    curr_alias_radio_id(-1),
-    curr_alias_text("")
+    grp_id(-1)
 {
 	assert (slotid == 0 || slotid == 1);
 	mbe_initMbeParms (&cur_mp, &prev_mp, &enh_mp);
@@ -177,14 +174,6 @@ long p25p2_tdma::get_ptt_grp_id() {
 	long addr = grp_id;
     grp_id = -1;
 	return addr;
-}
-
-std::tuple<long, std::string, std::string> p25p2_tdma::get_alias_ota() {
-	std::tuple<long, std::string, std::string> result = std::make_tuple(curr_alias_radio_id, curr_alias_text, curr_alias_source);
-	curr_alias_radio_id = -1;
-	curr_alias_text = "";
-	curr_alias_source = "";
-	return result;
 }
 
 p25p2_tdma::~p25p2_tdma()	// destructor
@@ -472,19 +461,17 @@ void p25p2_tdma::decode_mac_msg(const uint8_t byte_buf[], const unsigned int len
 				if ((block_num > 0 && block_num < 10) && (msg_sequence == header_sequence)) {
 					alias_buffer[block_num].assign(byte_buf + msg_ptr, byte_buf + msg_ptr + msg_len);
 					
-					// When all blocks received, decode the alias
+					// When all blocks received, send raw buffer to recorder for decoding
 					if (block_num == messages && messages > 0) {
-						OTAAlias result = UnitTagsOTA::decode_motorola_alias_p2(alias_buffer, messages);
-
-						if (result.success && !result.alias.empty()) {
-							// Store in member variables
-							curr_alias_radio_id = result.radio_id;
-							curr_alias_text = result.alias;
-							curr_alias_source = result.source;
-							// Send alias as JSON message downstream to be processed by recorder
-							// std::string s = "{\"alias\": \"" + result.alias + "\", \"radio_id\": " + std::to_string(result.radio_id) + ", \"source\": \"" + result.source + "\"}";
-							// send_msg(s, M_P25_JSON_DATA);
+						std::string msg = "{\"type\": \"motorola_alias_p2\", \"messages\": " + std::to_string(messages) + ", \"blocks\": {";
+						for (int i = 0; i <= messages && i < 10; i++) {
+							if (!alias_buffer[i].empty()) {
+								if (i > 0) msg += ", ";
+								msg += "\"" + std::to_string(i) + "\": \"" + uint8_vector_to_hex_string(alias_buffer[i]) + "\"";
+							}
 						}
+						msg += "}}";
+						send_msg(msg, M_P25_JSON_DATA);
 					}
 				}
 			}

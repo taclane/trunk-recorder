@@ -40,7 +40,6 @@
 #include "rs.h"
 #include "p25_crypt_algs.h"
 #include "imbe_vocoder/imbe_vocoder.h"
-#include "../../../trunk-recorder/unit_tags_ota.h"
 
 namespace gr {
     namespace op25_repeater {
@@ -219,8 +218,6 @@ namespace gr {
             ess_keyid(0),
             curr_src_id(-1),
             curr_grp_id(-1),
-            curr_alias_radio_id(-1),
-            curr_alias_text(""),
             ess_algid(0x80),
             vf_tgid(0),
 			terminate_call(std::pair<bool,long>(false,0)),
@@ -267,13 +264,6 @@ namespace gr {
 			return addr;
 		}
 		
-		std::tuple<long, std::string, std::string> p25p1_fdma::get_alias_ota() {
-			std::tuple<long, std::string, std::string> result = std::make_tuple(curr_alias_radio_id, curr_alias_text, curr_alias_source);
-			curr_alias_radio_id = -1;
-			curr_alias_text = "";
-			curr_alias_source = "";
-			return result;
-		}
 		void p25p1_fdma::clear() {
 			p1voice_decode.clear();
 		}
@@ -543,21 +533,17 @@ namespace gr {
                                 if ((message > 0 && message < 10) && (message <= messages) && (msg_sequence == header_sequence)) {
                                     alias_buffer[message] = lcw;
 
-                                    // When all messages received, decode the alias
+                                    // When all messages received, send raw buffer to recorder for decoding
                                     if (message == messages && messages > 0 && messages < (int)alias_buffer.size()) {
-                                        OTAAlias result = UnitTagsOTA::decode_motorola_alias(alias_buffer, messages);
-                                        
-                                        if (result.success && !result.alias.empty()) {
-                                            // Store in member variables
-                                            curr_alias_radio_id = result.radio_id;
-                                            curr_alias_text = result.alias;
-                                            curr_alias_source = result.source;
-                                            // Send alias, radio_id, and source as JSON message downstream to be processed by recorder
-                                            // std::string alias_json = "{\"alias\": \"" + result.alias + 
-                                            //                        "\", \"radio_id\": " + std::to_string(result.radio_id) + 
-                                            //                        ", \"source\": \"" + result.source + "\"}";
-                                            // send_msg(alias_json, M_P25_JSON_DATA);
+                                        std::string msg = "{\"type\": \"motorola_alias_p1\", \"messages\": " + std::to_string(messages) + ", \"blocks\": {";
+                                        for (int i = 0; i <= messages && i < 10; i++) {
+                                            if (!alias_buffer[i].empty()) {
+                                                if (i > 0) msg += ", ";
+                                                msg += "\"" + std::to_string(i) + "\": \"" + uint8_vector_to_hex_string(alias_buffer[i]) + "\"";
+                                            }
                                         }
+                                        msg += "}}";
+                                        send_msg(msg, M_P25_JSON_DATA);
                                     }
                                 }
                             }

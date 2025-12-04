@@ -140,37 +140,6 @@ static const int MAX_IN = 1;	// maximum number of input streams
       // p1fdma.clear(); //All this does is Clear the Vocoder - I am nervous about doing this because there are some memsets...
     }
 
-bool p25_frame_assembler_impl::check_alias_queue() {
-  bool alias_created = false;
-  
-  // Check for OTA aliases from FDMA (Phase 1)
-  std::tuple<long, std::string, std::string> fdma_alias = p1fdma.get_alias_ota();
-  if (std::get<0>(fdma_alias) > 0 && !std::get<1>(fdma_alias).empty()) {
-    pmt::pmt_t alias_tuple = pmt::make_tuple(
-      pmt::from_long(std::get<0>(fdma_alias)),
-      pmt::string_to_symbol(std::get<1>(fdma_alias)),
-      pmt::string_to_symbol(std::get<2>(fdma_alias))
-    );
-    add_item_tag(0, nitems_written(0), pmt::intern("alias_ota"), alias_tuple, d_tag_src);
-    BOOST_LOG_TRIVIAL(debug) << "P25 Frame Assembler: Created FDMA alias_ota tag for radio " << std::get<0>(fdma_alias) << ": '" << std::get<1>(fdma_alias) << "' (source: " << std::get<2>(fdma_alias) << ")";
-    alias_created = true;
-  }
-  
-  // Check for OTA aliases from TDMA (Phase 2)
-  std::tuple<long, std::string, std::string> tdma_alias = p2tdma.get_alias_ota();
-  if (std::get<0>(tdma_alias) > 0 && !std::get<1>(tdma_alias).empty()) {
-    pmt::pmt_t alias_tuple = pmt::make_tuple(
-      pmt::from_long(std::get<0>(tdma_alias)),
-      pmt::string_to_symbol(std::get<1>(tdma_alias)),
-      pmt::string_to_symbol(std::get<2>(tdma_alias))
-    );
-    add_item_tag(0, nitems_written(0), pmt::intern("alias_ota"), alias_tuple, d_tag_src);
-    BOOST_LOG_TRIVIAL(debug) << "P25 Frame Assembler: Created TDMA alias_ota tag for radio " << std::get<0>(tdma_alias) << ": '" << std::get<1>(tdma_alias) << "' (source: " << std::get<2>(tdma_alias) << ")";
-    alias_created = true;
-  }
-  
-  return alias_created;
-}
 
 void p25_frame_assembler_impl::send_grp_src_id() {
   bool tag_created = false;
@@ -249,10 +218,6 @@ p25_frame_assembler_impl::general_work (int noutput_items,
     }
   }
 
-  // Check for OTA alias tags after processing frames
-  bool alias_tag_created = check_alias_queue();
-
-
   int amt_produce = 0;
 
       // If this block is being used for Trunking, then you want to skip all of this.
@@ -291,12 +256,6 @@ p25_frame_assembler_impl::general_work (int noutput_items,
         }
         
         if (amt_produce == 0 && terminate_call.first) {
-          std::fill(out, out + 1, 0);
-          amt_produce = 1;
-        }
-        
-        // If alias or ID tag was created but no audio, send null packet to flush tags
-        if (amt_produce == 0 && (alias_tag_created)) {  // || id_tag_created
           std::fill(out, out + 1, 0);
           amt_produce = 1;
         }
