@@ -23,7 +23,6 @@
 
 #include "transmission_sink.h"
 #include "../../trunk-recorder/call.h"
-#include "../../trunk-recorder/systems/system_impl.h"
 #include <boost/filesystem.hpp>
 #include <boost/math/special_functions/round.hpp>
 #include <climits>
