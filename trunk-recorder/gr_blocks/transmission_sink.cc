@@ -341,7 +341,6 @@ int transmission_sink::work(int noutput_items, gr_vector_const_void_star &input_
   pmt::pmt_t src_id_key(pmt::intern("src_id")); // This is the src id from Phase 1, Phase 2 and DMR
   pmt::pmt_t grp_id_key(pmt::intern("grp_id")); // This is the talkgroup id from Phase 1, Phase 2 and DMR
   pmt::pmt_t cc_key(pmt::intern("cc"));         // This is the channel color code from DMR
-  pmt::pmt_t alias_ota_key(pmt::intern("alias_ota")); // This is an over-the-air alias tag
   pmt::pmt_t terminate_key(pmt::intern("terminate"));
   pmt::pmt_t spike_count_key(pmt::intern("spike_count"));
   pmt::pmt_t error_count_key(pmt::intern("error_count"));
@@ -426,30 +425,6 @@ int transmission_sink::work(int noutput_items, gr_vector_const_void_star &input_
       }
     }
 
-    // If an OTA alias tag is received, add it to the System's UnitTags
-    if (pmt::eq(alias_ota_key, tags[i].key)) {
-      pmt::pmt_t value = tags[i].value;
-      if (pmt::is_tuple(value) && pmt::length(value) == 3) {
-        long radio_id = pmt::to_long(pmt::tuple_ref(value, 0));
-        std::string alias_text = pmt::symbol_to_string(pmt::tuple_ref(value, 1));
-        std::string source = pmt::symbol_to_string(pmt::tuple_ref(value, 2));
-        
-        if (d_current_call && radio_id > 0 && !alias_text.empty()) {
-          System *sys = d_current_call->get_system();
-          if (sys) {
-            System_impl *sys_impl = dynamic_cast<System_impl*>(sys);
-            if (sys_impl && sys_impl->unit_tags) {
-              bool added = sys_impl->unit_tags->addFront(radio_id, alias_text, source);
-              if (added) {
-                BOOST_LOG_TRIVIAL(info) << loghdr << Color::BMAG << "New " << source << " alias: " << Color::RST << radio_id << " (" << Color::BLU << alias_text << Color::RST << ")" ; 
-              } else {
-                BOOST_LOG_TRIVIAL(debug) << loghdr << "OTA alias for radio " << radio_id << " not added (already exists)";
-              }
-            }
-          }
-        }
-      }
-    }
 
 
     if (pmt::eq(terminate_key, tags[i].key)) {

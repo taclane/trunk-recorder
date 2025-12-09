@@ -228,10 +228,6 @@ p25_frame_assembler_impl::general_work (int noutput_items,
         //BOOST_LOG_TRIVIAL(trace) << "P25 Frame Assembler -  output_queue: " << output_queue.size() << " noutput_items: " <<  noutput_items << " ninput_items: " << ninput_items[0];
 
         if (amt_produce > 0) {
-            // Must respect both the internal buffer limit AND the output buffer size GNU Radio allocated
-            if (amt_produce > noutput_items) {
-              amt_produce = noutput_items;
-            }
             if (amt_produce >= 32768) {
               BOOST_LOG_TRIVIAL(error) << "P25 Frame Assembler -  output_queue size: " << output_queue.size() << " max size: " << output_queue.max_size() << " limiting amt_produce to  32767 ";
               

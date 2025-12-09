@@ -29,7 +29,7 @@ private:
   static std::string assemble_payload(const std::array<std::vector<uint8_t>, 10>& alias_buffer, int messages);
   static std::string assemble_payload_p2(const std::array<std::vector<uint8_t>, 10>& alias_buffer, int messages);
   static bool validate_crc(const std::string& payload_hex, const std::string& checksum_hex);
-  static std::string decrypt_alias(const std::vector<int8_t>& encoded_data);
+  static std::string decode_mot_alias(const std::vector<int8_t>& encoded_data);
 };
 
 #endif // UNIT_TAGS_OTA_H

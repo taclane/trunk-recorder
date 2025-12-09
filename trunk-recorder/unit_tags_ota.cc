@@ -1,5 +1,5 @@
 // Handling utilities for OTA (Over-The-Air) unit tags
-// Motorola Alias Algorythm - Copyright 2024 Ilya Smirnov / @ilyacodes. All rights reserved.
+// Motorola Alias Algorithm decode_mot_alias() - Copyright 2024 Ilya Smirnov / @ilyacodes. All rights reserved.
 
 #include "unit_tags_ota.h"
 
@@ -96,7 +96,7 @@ OTAAlias UnitTagsOTA::decode_motorola_alias(const std::array<std::vector<uint8_t
   std::vector<int8_t> encoded(payload_bytes.begin() + 7, payload_bytes.end());
 
   // Decrypt the alias text
-  std::string alias = decrypt_alias(encoded);
+  std::string alias = decode_mot_alias(encoded);
 
   if (!alias.empty()) {
     BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: Decoded alias: '" << alias << "' for radio " << radio_decimal << " (0x" << radio << ")";
@@ -258,7 +258,7 @@ payload_hex = payload_hex.substr(10);
   BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: Encoded data size: " << encoded.size() << " bytes";
 
   // Decrypt the alias text (same algorithm as Phase 1)
-  std::string alias = decrypt_alias(encoded);
+  std::string alias = decode_mot_alias(encoded);
 
   if (!alias.empty()) {
     BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: Decoded alias: '" << alias << "' for radio " << radio_decimal << " (0x" << radio << ")";
@@ -312,16 +312,8 @@ bool UnitTagsOTA::validate_crc(const std::string& payload_hex, const std::string
   return (crc_calc == expected_crc);
 }
 
-// Decrypt Motorola alias using proprietary obfuscation scheme
-// 
-// Algorithm: Stateful stream cipher with substitution and modular arithmetic
-// Components:
-//   1. Linear Congruential Generator (LCG) for pseudo-random state
-//   2. Substitution table for byte permutation
-//   3. Modular multiplicative inverse for final transformation
-//
-// This is NOT cryptographically secure - it's obfuscation, not encryption.
-std::string UnitTagsOTA::decrypt_alias(const std::vector<int8_t>& encoded) {
+// De-obfuscate Motorola alias using custom algorithm
+std::string UnitTagsOTA::decode_mot_alias(const std::vector<int8_t>& encoded) {
 
   static const uint8_t SUBSTITUTION_TABLE[256] = {
     0xd2, 0xf6, 0xd4, 0x2b, 0x63, 0x49, 0x94, 0x5e, 0xa7, 0x5c, 0x70, 0x69, 0xf7, 0x08, 0xb1, 0x7d,
@@ -343,8 +335,7 @@ std::string UnitTagsOTA::decrypt_alias(const std::vector<int8_t>& encoded) {
   };
 
   std::vector<uint8_t> decoded(encoded.size(), 0);
-  
- 
+
   // Accumulator: initialized with output buffer length
   uint16_t accumulator = static_cast<uint16_t>(decoded.size());
 
@@ -390,8 +381,7 @@ std::string UnitTagsOTA::decrypt_alias(const std::vector<int8_t>& encoded) {
   for (size_t i = 0; i + 1 < decoded.size(); i += 2) {
     uint16_t codepoint = (static_cast<uint16_t>(decoded[i]) << 8) | decoded[i + 1];
     
-    // Only accept printable ASCII (0x01-0x7F)
-    // This filters out null terminators and extended characters
+    // Only output printable ASCII
     if (codepoint > 31 && codepoint < 128) {
       alias += static_cast<char>(codepoint);
     }

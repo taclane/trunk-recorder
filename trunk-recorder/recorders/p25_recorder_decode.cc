@@ -95,7 +95,8 @@ void p25_recorder_decode::initialize(int silence_frames, bool d_soft_vocoder) {
   const char *udp_host = "127.0.0.1";
   bool do_imbe = 1;
   bool do_output = 1;
-  bool do_msgq = 1; // Enable message queue for metadata (aliases, etc.)
+  // message queue disabled for conventional recoeders at this time
+  bool do_msgq = !(d_recorder->is_conventional());
   bool do_audio_output = 1;
   bool do_tdma = 0;
   bool do_nocrypt = 1;
@@ -222,7 +223,5 @@ void p25_recorder_decode::check_message_queue() {
         BOOST_LOG_TRIVIAL(debug) << "Malformed P25 JSON message: " << e.what();
       }
     }
-    // NOTE: Cannot re-queue unhandled messages - this is polled at 100Hz
-    // Re-inserting would create infinite processing loop for unknown message types
   }
 }
