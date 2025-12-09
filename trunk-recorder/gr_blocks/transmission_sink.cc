@@ -425,8 +425,6 @@ int transmission_sink::work(int noutput_items, gr_vector_const_void_star &input_
       }
     }
 
-
-
     if (pmt::eq(terminate_key, tags[i].key)) {
       d_termination_flag = true;
       pos = d_sample_count + (tags[i].offset - nitems_read(0));

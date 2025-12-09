@@ -821,7 +821,7 @@ void process_recorder_message_queues(std::vector<Call *> &calls) {
     if (call->get_state() == RECORDING) {
       Recorder *recorder = call->get_recorder();
       // only process trunked P25 recorder message queues for now
-      if (recorder && (recorder->get_type() == P25 )) {
+      if (recorder && (recorder->get_type() == P25)) {
         p25_recorder *p25_rec = dynamic_cast<p25_recorder *>(recorder);
         if (p25_rec) {
           p25_rec->process_message_queues();

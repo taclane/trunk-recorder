@@ -142,8 +142,6 @@ static const int MAX_IN = 1;	// maximum number of input streams
 
 
 void p25_frame_assembler_impl::send_grp_src_id() {
-  bool tag_created = false;
-  
   long tdma_src_id = -1;
   long tdma_grp_id = -1;
   long fdma_src_id = -1;
@@ -157,12 +155,10 @@ void p25_frame_assembler_impl::send_grp_src_id() {
   // If a SRC wasn't received on the voice channel since the last check, it will be -1
   if (fdma_src_id > 0) {
     add_item_tag(0, nitems_written(0), pmt::intern("src_id"), pmt::from_long(fdma_src_id), d_tag_src);
-    tag_created = true;
   }
 
   if (tdma_src_id > 0) {
     add_item_tag(0, nitems_written(0), pmt::intern("src_id"), pmt::from_long(tdma_src_id), d_tag_src);
-    tag_created = true;
   }
 
   if ((tdma_src_id > 0) && (fdma_src_id > 0)) {
@@ -171,12 +167,10 @@ void p25_frame_assembler_impl::send_grp_src_id() {
 
   if (fdma_grp_id > 0) {
     add_item_tag(0, nitems_written(0), pmt::intern("grp_id"), pmt::from_long(fdma_grp_id), d_tag_src);
-    tag_created = true;
   }
 
   if (tdma_grp_id > 0) {
     add_item_tag(0, nitems_written(0), pmt::intern("grp_id"), pmt::from_long(tdma_grp_id), d_tag_src);
-    tag_created = true;
   }
 
   if ((tdma_grp_id > 0) && (fdma_grp_id > 0)) {
