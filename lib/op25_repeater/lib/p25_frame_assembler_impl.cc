@@ -142,40 +142,40 @@ static const int MAX_IN = 1;	// maximum number of input streams
 
 
 void p25_frame_assembler_impl::send_grp_src_id() {
-  long tdma_src_id = -1;
-  long tdma_grp_id = -1;
-  long fdma_src_id = -1;
-  long fdma_grp_id = -1;
+          long tdma_src_id = -1;
+          long tdma_grp_id = -1;
+          long fdma_src_id = -1;
+          long fdma_grp_id = -1;
 
-  tdma_src_id = p2tdma.get_ptt_src_id(); 
-  tdma_grp_id = p2tdma.get_ptt_grp_id(); 
-  fdma_src_id = p1fdma.get_curr_src_id();
-  fdma_grp_id = p1fdma.get_curr_grp_id();
+          tdma_src_id = p2tdma.get_ptt_src_id(); 
+          tdma_grp_id = p2tdma.get_ptt_grp_id(); 
+          fdma_src_id = p1fdma.get_curr_src_id();
+          fdma_grp_id = p1fdma.get_curr_grp_id();
 
-  // If a SRC wasn't received on the voice channel since the last check, it will be -1
-  if (fdma_src_id > 0) {
-    add_item_tag(0, nitems_written(0), pmt::intern("src_id"), pmt::from_long(fdma_src_id), d_tag_src);
-  }
+          // If a SRC wasn't received on the voice channel since the last check, it will be -1
+          if (fdma_src_id > 0) {
+            add_item_tag(0, nitems_written(0), pmt::intern("src_id"), pmt::from_long(fdma_src_id), d_tag_src);
+          }
 
-  if (tdma_src_id > 0) {
-    add_item_tag(0, nitems_written(0), pmt::intern("src_id"), pmt::from_long(tdma_src_id), d_tag_src);
-  }
+          if (tdma_src_id > 0) {
+            add_item_tag(0, nitems_written(0), pmt::intern("src_id"), pmt::from_long(tdma_src_id), d_tag_src);
+          }
 
-  if ((tdma_src_id > 0) && (fdma_src_id > 0)) {
-    BOOST_LOG_TRIVIAL(info) << " Both TDMA and FDMA SRC IDs are set. TDMA: " << tdma_src_id << " FDMA: " << fdma_src_id;
-  }
+          if ((tdma_src_id > 0) && (fdma_src_id > 0)) {
+            BOOST_LOG_TRIVIAL(info) << " Both TDMA and FDMA SRC IDs are set. TDMA: " << tdma_src_id << " FDMA: " << fdma_src_id;
+          }
 
-  if (fdma_grp_id > 0) {
-    add_item_tag(0, nitems_written(0), pmt::intern("grp_id"), pmt::from_long(fdma_grp_id), d_tag_src);
-  }
+          if (fdma_grp_id > 0) {
+            add_item_tag(0, nitems_written(0), pmt::intern("grp_id"), pmt::from_long(fdma_grp_id), d_tag_src);
+          }
 
-  if (tdma_grp_id > 0) {
-    add_item_tag(0, nitems_written(0), pmt::intern("grp_id"), pmt::from_long(tdma_grp_id), d_tag_src);
-  }
+          if (tdma_grp_id > 0) {
+            add_item_tag(0, nitems_written(0), pmt::intern("grp_id"), pmt::from_long(tdma_grp_id), d_tag_src);
+          }
 
-  if ((tdma_grp_id > 0) && (fdma_grp_id > 0)) {
-    BOOST_LOG_TRIVIAL(info) << " Both TDMA and FDMA GRP IDs are set. TDMA: " << tdma_grp_id << " FDMA: " << fdma_grp_id;
-  }
+          if ((tdma_grp_id > 0) && (fdma_grp_id > 0)) {
+            BOOST_LOG_TRIVIAL(info) << " Both TDMA and FDMA GRP IDs are set. TDMA: " << tdma_grp_id << " FDMA: " << fdma_grp_id;
+          }
 }
 
 
