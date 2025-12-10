@@ -659,51 +659,58 @@ void p25p2_tdma::handle_voice_frame(const uint8_t dibits[], int slot, int voice_
 		}
 		vf.pack_cw(p_cw, u);
 		audio_valid = crypt_algs.process(p_cw, fr_type, voice_subframe);
-		if (!audio_valid)
-			return;
-        vf.unpack_cw(p_cw, u);  // unpack plaintext codewords
-        vf.unpack_b(b, u);      // for unencrypted traffic this is done inside vf.process_vcw()
+		if (audio_valid) {
+			vf.unpack_cw(p_cw, u);  // unpack plaintext codewords
+			vf.unpack_b(b, u);      // for unencrypted traffic this is done inside vf.process_vcw()
+		} else {
+		// For encrypted voice without a valid key, push silent audio frames
+        // If monitoring for metadata, this will allow tags to pass and preserve call flow
+		memset(samples_buf, 0, sizeof(samples_buf));
+		}
 	}
 
-	rc = mbe_dequantizeAmbeTone(&tone_mp, &errs_mp, u);
-	if (rc >= 0) {					// Tone Frame
-		if (rc == 0) {                  // Valid Tone
-			tone_frame = true;
-			mbe_err_cnt = 0;
-		} else {                        // Tone Erasure with Frame Repeat
-			if ((++mbe_err_cnt < 4) && tone_frame) {
+	// Only dequantize and synthesize if we have valid audio (decrypted or unencrypted)
+	if (audio_valid) {
+		rc = mbe_dequantizeAmbeTone(&tone_mp, &errs_mp, u);
+		if (rc >= 0) {					// Tone Frame
+			if (rc == 0) {                  // Valid Tone
+				tone_frame = true;
+				mbe_err_cnt = 0;
+			} else {                        // Tone Erasure with Frame Repeat
+				if ((++mbe_err_cnt < 4) && tone_frame) {
+					mbe_useLastMbeParms(&cur_mp, &prev_mp);
+					rc = 0;
+				} else {
+					tone_frame = false;     // Mute audio output after 3 successive Frame Repeats
+				}
+			}
+		} else {
+			rc = mbe_dequantizeAmbe2250Parms (&cur_mp, &prev_mp, &errs_mp, b);
+			if (rc == 0) {				// Voice Frame
+				tone_frame = false;
+				mbe_err_cnt = 0;
+			} else if ((++mbe_err_cnt < 4) && !tone_frame) {// Erasure with Frame Repeat per TIA-102.BABA.5.6
 				mbe_useLastMbeParms(&cur_mp, &prev_mp);
 				rc = 0;
 			} else {
-				tone_frame = false;     // Mute audio output after 3 successive Frame Repeats
+				tone_frame = false;         // Mute audio output after 3 successive Frame Repeats
 			}
-        }
-	} else {
-		rc = mbe_dequantizeAmbe2250Parms (&cur_mp, &prev_mp, &errs_mp, b);
-		if (rc == 0) {				// Voice Frame
-			tone_frame = false;
-			mbe_err_cnt = 0;
-		} else if ((++mbe_err_cnt < 4) && !tone_frame) {// Erasure with Frame Repeat per TIA-102.BABA.5.6
-			mbe_useLastMbeParms(&cur_mp, &prev_mp);
-			rc = 0;
-		} else {
-			tone_frame = false;         // Mute audio output after 3 successive Frame Repeats
 		}
-	}
 
-	// Synthesize tones or speech as long as dequantization was successful and overall error rate is below threshold
-	if ((rc == 0) && (errs_mp.ER <= 0.096)) {
-		if (tone_frame) {
-			software_decoder.decode_tone(samples_buf, tone_mp.ID, tone_mp.AD, &tone_mp.n);
-		} else if(d_soft_vocoder) {
-			K = 12;
-			if (cur_mp.L <= 36)
-				K = int(float(cur_mp.L + 2.0) / 3.0);
-			software_decoder.decode_tap(samples_buf, cur_mp.L, K, cur_mp.w0, &cur_mp.Vl[1], &cur_mp.Ml[1]);
-		} else {
-			vocoder.decode_tap(samples_buf, cur_mp.L, cur_mp.w0, &cur_mp.Vl[1], &cur_mp.Ml[1]);
+		// Synthesize tones or speech as long as dequantization was successful and overall error rate is below threshold
+		if ((rc == 0) && (errs_mp.ER <= 0.096)) {
+			if (tone_frame) {
+				software_decoder.decode_tone(samples_buf, tone_mp.ID, tone_mp.AD, &tone_mp.n);
+			} else if(d_soft_vocoder) {
+				K = 12;
+				if (cur_mp.L <= 36)
+					K = int(float(cur_mp.L + 2.0) / 3.0);
+				software_decoder.decode_tap(samples_buf, cur_mp.L, K, cur_mp.w0, &cur_mp.Vl[1], &cur_mp.Ml[1]);
+			} else {
+				vocoder.decode_tap(samples_buf, cur_mp.L, cur_mp.w0, &cur_mp.Vl[1], &cur_mp.Ml[1]);
+			}
 		}
-	}
+	} 
 
 	// Populate output buffer with either audio samples or silence
 	write_bufp = 0;

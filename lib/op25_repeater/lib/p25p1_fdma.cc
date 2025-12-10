@@ -799,8 +799,15 @@ namespace gr {
                                 }
                             }
                         } else {
+		                    // For encrypted voice without a valid key, push silent audio frames
+                            // If monitoring for metadata, this will allow tags to pass and preserve call flow
+                            if (!op25audio.enabled()) {
+                                for (int i = 0; i < SND_FRAME; i++) {
+                                    output_queue.push_back(0);  // Silent frame
+                                }
+                            }
                             std::string encr = "{\"encrypted\": " + std::to_string(1) + ", \"algid\": " + std::to_string(ess_algid) + ", \"keyid\": " + std::to_string(ess_keyid) + "}";
-                            //send_msg(encr, M_P25_JSON_DATA);
+                            send_msg(encr, M_P25_JSON_DATA);
                         }
                     }
 

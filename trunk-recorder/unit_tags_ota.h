@@ -30,6 +30,7 @@ private:
   static std::string assemble_payload_p2(const std::array<std::vector<uint8_t>, 10>& alias_buffer, int messages);
   static bool validate_crc(const std::string& payload_hex, const std::string& checksum_hex);
   static std::string decode_mot_alias(const std::vector<int8_t>& encoded_data);
+  static uint8_t mod256_inverse(uint8_t modulus);
 };
 
 #endif // UNIT_TAGS_OTA_H

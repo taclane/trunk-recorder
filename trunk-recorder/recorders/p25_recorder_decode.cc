@@ -95,8 +95,7 @@ void p25_recorder_decode::initialize(int silence_frames, bool d_soft_vocoder) {
   const char *udp_host = "127.0.0.1";
   bool do_imbe = 1;
   bool do_output = 1;
-  // message queue disabled for conventional recorders at this time
-  bool do_msgq = !(d_recorder->is_conventional());
+  bool do_msgq = 1;
   bool do_audio_output = 1;
   bool do_tdma = 0;
   bool do_nocrypt = 1;
@@ -177,7 +176,7 @@ void p25_recorder_decode::handle_alias_message(const nlohmann::json& j) {
   if (result.success && !result.alias.empty()) {
     std::string loghdr = log_header(d_call->get_short_name(),d_call->get_call_num(),d_call->get_talkgroup_display(),d_call->get_freq());
     
-    //BOOST_LOG_TRIVIAL(info) << loghdr << "Alias OTA: " << result.radio_id << " = \"" << result.alias << "\" [" << result.source << "]";
+    BOOST_LOG_TRIVIAL(debug) << loghdr << "Alias OTA: " << result.radio_id << " = \"" << result.alias << "\" [" << result.source << "]";
     
     System *sys = d_call->get_system();
     if (sys) {

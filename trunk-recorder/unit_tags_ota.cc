@@ -353,20 +353,22 @@ std::string UnitTagsOTA::decode_mot_alias(const std::vector<int8_t>& encoded) {
     uint8_t intermediate = substituted - static_cast<uint8_t>(lcg_value >> 8);
 
     // Step 4: Modular multiplicative inverse (mod 256)
-    // Sets LSB to ensure odd number (required for inverse to exist in mod 256)
+    //   Sets LSB to ensure odd number (required for inverse to exist in mod 256)
+    //   Then find x where: x * modulus ≡ 1 (mod 256)
     uint8_t modulus = static_cast<uint8_t>(lcg_value | 0x1);
+    // Extended Euclidean Algorithm implementation
+    uint8_t inverse = mod256_inverse(modulus);
     
-    // Find x where: x * modulus ≡ 1 (mod 256)
-    // Uses repeated addition instead of Extended Euclidean Algorithm
-    uint8_t inverse = 1;
-    uint8_t test_val = modulus;
-    
-    while (test_val != 1 && inverse != 255) {
-      test_val += modulus * 2;
-      inverse += 2;
-    }
+    // Repeated addition implementation (slower)
+    // uint8_t inverse = 1;
+    // uint8_t test_val = modulus;
+    //
+    // while (test_val != 1 && inverse != 255) {
+    //   test_val += modulus * 2;
+    //   inverse += 2;
+    // }
 
-    // Step 5: Final decryption - multiply by modular inverse
+    // Step 5: Final decode - multiply by modular inverse
     decoded[i] = intermediate * inverse;
 
     // Step 6: Update state for next iteration
@@ -376,7 +378,7 @@ std::string UnitTagsOTA::decode_mot_alias(const std::vector<int8_t>& encoded) {
   // Reconstruct alias string from decoded bytes
   // Data is stored as big-endian 16-bit characters (UTF-16 BE subset)
   std::string alias;
-  alias.reserve(decoded.size() / 2);  // Pre-allocate for efficiency
+  alias.reserve(decoded.size() / 2);
   
   for (size_t i = 0; i + 1 < decoded.size(); i += 2) {
     uint16_t codepoint = (static_cast<uint16_t>(decoded[i]) << 8) | decoded[i + 1];
@@ -388,4 +390,24 @@ std::string UnitTagsOTA::decode_mot_alias(const std::vector<int8_t>& encoded) {
   }
 
   return alias;
+}
+
+// Compute modular multiplicative inverse using Extended Euclidean Algorithm
+// (Looks more complicated than the "Repeated addition implementation" but should be more efficient)
+uint8_t UnitTagsOTA::mod256_inverse(uint8_t modulus) {
+    int16_t t = 0, new_t = 1;         // coefficients
+    int16_t r = 256, new_r = modulus; // remainders
+    
+    while (new_r != 0) {
+        int16_t q = r / new_r;        // quotients
+        int16_t temp = new_r;
+        new_r = r - q * new_r;
+        r = temp;
+        
+        temp = new_t;
+        new_t = t - q * new_t;
+        t = temp;
+    }
+    
+    return (r > 1) ? 0 : (t < 0 ? t + 256 : t);
 }

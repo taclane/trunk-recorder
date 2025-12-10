@@ -472,7 +472,7 @@ void Call_Concluder::conclude_call(Call *call, System *sys, Config config) {
 
   // Handle encrypted calls: metadata only, no audio upload
   if (call_info.encrypted) {
-    BOOST_LOG_TRIVIAL(info) << loghdr << "Encrypted call - capturing metadata only, removing audio";
+    BOOST_LOG_TRIVIAL(info) << loghdr << Color::RED << "Encrypted call" << Color::RST << " - monitoring metadata only, removing null audio";
     
     if (call_info.transmission_list.size() > 0 || call_info.min_transmissions_removed > 0) {
       int result = create_call_json(call_info);
