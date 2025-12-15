@@ -125,6 +125,8 @@ public:
   virtual void set_unit_tags_file(std::string) = 0;
   virtual void set_unit_tags_ota_file(std::string) = 0;
   virtual std::string get_unit_tags_ota_file() = 0;
+  virtual void set_unit_tags_mode(std::string mode) = 0;
+  virtual std::string get_unit_tags_mode() = 0;
   virtual void set_custom_freq_table_file(std::string custom_freq_table_file) = 0;
   virtual std::string get_custom_freq_table_file() = 0;
   virtual bool has_custom_freq_table_file() = 0;

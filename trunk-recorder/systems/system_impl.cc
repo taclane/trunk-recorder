@@ -341,6 +341,23 @@ std::string System_impl::get_unit_tags_ota_file() {
   return this->unit_tags_ota_file;
 }
 
+void System_impl::set_unit_tags_mode(std::string mode) {
+  this->unit_tags_mode = mode;
+  if (mode == "ota" || mode == "OTA") {
+    this->unit_tags->set_mode(TAG_OTA_FIRST);
+  } else if (mode == "user_only") {
+    this->unit_tags->set_mode(TAG_USER_ONLY);
+  } else if (mode == "none") {
+    this->unit_tags->set_mode(TAG_NONE);
+  } else {
+    this->unit_tags->set_mode(TAG_USER_FIRST);
+  }
+}
+
+std::string System_impl::get_unit_tags_mode() {
+  return this->unit_tags_mode;
+}
+
 void System_impl::set_custom_freq_table_file(std::string custom_freq_table_file) {
   this->custom_freq_table_file = custom_freq_table_file;
 }

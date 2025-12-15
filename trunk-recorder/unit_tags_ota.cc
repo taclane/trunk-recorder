@@ -356,19 +356,9 @@ std::string UnitTagsOTA::decode_mot_alias(const std::vector<int8_t>& encoded) {
     //   Sets LSB to ensure odd number (required for inverse to exist in mod 256)
     //   Then find x where: x * modulus ≡ 1 (mod 256)
     uint8_t modulus = static_cast<uint8_t>(lcg_value | 0x1);
-    // Extended Euclidean Algorithm implementation
     uint8_t inverse = mod256_inverse(modulus);
     
-    // Repeated addition implementation (slower)
-    // uint8_t inverse = 1;
-    // uint8_t test_val = modulus;
-    //
-    // while (test_val != 1 && inverse != 255) {
-    //   test_val += modulus * 2;
-    //   inverse += 2;
-    // }
-
-    // Step 5: Final decode - multiply by modular inverse
+     // Step 5: Final decode - multiply by modular inverse
     decoded[i] = intermediate * inverse;
 
     // Step 6: Update state for next iteration
@@ -393,7 +383,7 @@ std::string UnitTagsOTA::decode_mot_alias(const std::vector<int8_t>& encoded) {
 }
 
 // Compute modular multiplicative inverse using Extended Euclidean Algorithm
-// (Looks more complicated than the "Repeated addition implementation" but should be more efficient)
+// (should be more efficicnt than brute-force search for every character)
 uint8_t UnitTagsOTA::mod256_inverse(uint8_t modulus) {
     int16_t t = 0, new_t = 1;         // coefficients
     int16_t r = 256, new_r = modulus; // remainders

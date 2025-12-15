@@ -182,7 +182,7 @@ void p25_recorder_decode::handle_alias_message(const nlohmann::json& j) {
     if (sys) {
       System_impl *sys_impl = dynamic_cast<System_impl*>(sys);
       if (sys_impl && sys_impl->unit_tags) {
-        bool added = sys_impl->unit_tags->addFront(result.radio_id, result.alias, result.source);
+        bool added = sys_impl->unit_tags->add_ota(result.radio_id, result.alias, result.source);
         if (added) {
           BOOST_LOG_TRIVIAL(info) << loghdr << Color::BMAG << "New " << result.source << " alias: " << Color::RST 
                                   << result.radio_id << " (" << Color::BLU << result.alias << Color::RST << ")"; 
