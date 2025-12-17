@@ -2,6 +2,7 @@
 #define UNIT_TAGS_H
 
 #include "unit_tag.h"
+#include "unit_tags_ota.h"
 
 #include <string>
 #include <vector>
@@ -24,7 +25,7 @@ public:
   void load_unit_tags_ota(std::string filename);
   std::string find_unit_tag(long unitID);
   void add(std::string pattern, std::string tag);
-  bool add_ota(long unitID, std::string tag, std::string source = "");
+  bool add_ota(const OTAAlias& ota_alias);
   void set_mode(UnitTagMode mode);
   UnitTagMode get_mode();
 };

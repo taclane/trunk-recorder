@@ -9,7 +9,7 @@
 #include <map>
 #include <array>
 
-// OTA Motorola alias decoding - main entry point
+// OTA Motorola alias decoding
 OTAAlias UnitTagsOTA::decode_motorola_alias(const std::array<std::vector<uint8_t>, 10>& alias_buffer, int messages) {
   // Validate input
   if (messages <= 0 || messages >= (int)alias_buffer.size()) {
@@ -19,28 +19,28 @@ OTAAlias UnitTagsOTA::decode_motorola_alias(const std::array<std::vector<uint8_t
 
   // Assemble the payload from all message fragments
   std::string payload_hex = assemble_payload(alias_buffer, messages);
-  if (payload_hex.length() < 18) {
+  if (payload_hex.length() < 32) {
     BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: assembled payload too short (" << payload_hex.length() << " chars)";
     return OTAAlias();
   }
 
   // Extract components
-  std::string wacn = payload_hex.substr(0, 5);
-  std::string sys = payload_hex.substr(5, 3);
-  std::string radio = payload_hex.substr(8, 6);
-
+  std::string tg = payload_hex.substr(0, 4);           // Talkgroup ID
+  std::string msg_count = payload_hex.substr(4, 2);    // # of Data blocks
+  std::string unknown_4 = payload_hex.substr(6, 4);    // [unknown] - format?
+  std::string sequence_id = payload_hex.substr(10, 1); // Sequence ID char
+  std::string unknown_3 = payload_hex.substr(11, 3);   // [unknown] - checksum?
+  std::string wacn = payload_hex.substr(14, 5);        // WACN 
+  std::string sys = payload_hex.substr(19, 3);         // System ID
+  std::string radio = payload_hex.substr(22, 6);       // Radio ID
+  std::string length_code = payload_hex.substr(28, 2); // Alias length code (first 2 chars of alias)
+  
   // Lookup alias length based on code
   static const std::map<std::string, int> length_lookup = {
     {"94", 1}, {"32", 2}, {"95", 3}, {"9d", 4}, {"1b", 5}, {"77", 6}, {"b5", 7},
     {"6e", 8}, {"24", 9}, {"61", 10}, {"2d", 11}, {"7d", 12}, {"83", 13}, {"29", 14}
   };
 
-  if (payload_hex.length() < 16) {
-    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: payload too short for length code";
-    return OTAAlias();
-  }
-
-  std::string length_code = payload_hex.substr(14, 2);
   auto it = length_lookup.find(length_code);
   int alias_len = (it != length_lookup.end()) ? it->second : 0;
 
@@ -49,19 +49,20 @@ OTAAlias UnitTagsOTA::decode_motorola_alias(const std::array<std::vector<uint8_t
     return OTAAlias();
   }
 
-  size_t required_len = 14 + alias_len * 4 + 4;
+  size_t required_len = 28 + alias_len * 4 + 4;
   if (payload_hex.length() < required_len) {
     BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: payload too short for alias length " << alias_len;
     return OTAAlias();
   }
 
-  std::string alias_code = payload_hex.substr(14, alias_len * 4);
-  std::string checksum = payload_hex.substr(14 + alias_len * 4, 4);
+  std::string alias_code = payload_hex.substr(28, alias_len * 4);
+  std::string checksum = payload_hex.substr(28 + alias_len * 4, 4);
 
   // Convert radio ID to decimal
   unsigned long radio_decimal = std::stoul(radio, nullptr, 16);
+  unsigned long tg_decimal = std::stoul(tg, nullptr, 16);
 
-  BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: WACN: " << wacn << ", SYS: " << sys << ", Radio: " << radio_decimal << " (0x" << radio << ")";
+  BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: WACN: " << wacn << ", SYS: " << sys << ", Radio: " << radio_decimal << " (0x" << radio << ")" << ", TG: " << tg_decimal << " (0x" << tg << ")";
   BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: Alias Length: " << alias_len << ", Code: " << alias_code << ", Checksum: " << checksum;
 
   // Validate CRC
@@ -74,16 +75,10 @@ OTAAlias UnitTagsOTA::decode_motorola_alias(const std::array<std::vector<uint8_t
   BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: CRC-16/GSM check passed";
 
   // Convert hex string to bytes
-  std::vector<int8_t> payload_bytes;
-  for (size_t i = 0; i + 1 < crc_payload.length(); i += 2) {
-    std::istringstream iss(crc_payload.substr(i, 2));
-    int byte;
-    if (iss >> std::hex >> byte) {
-      payload_bytes.push_back(static_cast<int8_t>(byte));
-    } else {
-      BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: failed to parse hex at position " << i;
-      return OTAAlias();
-    }
+  std::vector<uint8_t> payload_bytes = hex_string_to_uint8_vector(crc_payload);
+  if (payload_bytes.empty()) {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: failed to parse hex payload";
+    return OTAAlias();
   }
 
   // Need at least 8 bytes (7 byte offset + 1 byte minimum encoded data)
@@ -99,16 +94,26 @@ OTAAlias UnitTagsOTA::decode_motorola_alias(const std::array<std::vector<uint8_t
   std::string alias = decode_mot_alias(encoded);
 
   if (!alias.empty()) {
-    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: Decoded alias: '" << alias << "' for radio " << radio_decimal << " (0x" << radio << ")";
-    return OTAAlias(radio_decimal, alias, "MotoP25_FDMA", wacn, sys, -1);
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: Decoded alias: '" << alias << "' for radio " << radio_decimal << " (0x" << radio << ")" << ", TG: " << tg_decimal << " (0x" << tg << ")";
+    return OTAAlias(radio_decimal, alias, "MotoP25_FDMA", wacn, sys, tg_decimal);
   }
 
+  BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: Decrypt returned empty alias";
   return OTAAlias();
 }
 
-// Assemble payload hex string from message buffer fragments
+// Phase 1 FDMA: assemble payload hex string from message buffer
 std::string UnitTagsOTA::assemble_payload(const std::array<std::vector<uint8_t>, 10>& alias_buffer, int messages) {
   std::stringstream ss;
+
+  if (alias_buffer[0].size() < 9) {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA: header too small";
+    return "";
+  }
+
+  // Header block - extract bytes 2-8 (7 bytes) - discarding opcode/mfr (bytes 0-1)
+  std::vector<uint8_t> header_slice(alias_buffer[0].begin() + 2, alias_buffer[0].begin() + 9);
+  ss << uint8_vector_to_hex_string(header_slice);
 
   for (int i = 1; i <= messages; i++) {
     if (alias_buffer[i].size() < 9) {
@@ -116,10 +121,9 @@ std::string UnitTagsOTA::assemble_payload(const std::array<std::vector<uint8_t>,
       return "";
     }
 
-    ss << std::hex << std::setw(1) << std::setfill('0') << (int)(alias_buffer[i][3] & 0xf);
-    for (int j = 4; j <= 8; j++) {
-      ss << std::hex << std::setw(2) << std::setfill('0') << (int)(alias_buffer[i][j]);
-    }
+    // Bytes 3-8: extract all, then skip first char (upper nibble of byte 3)
+    std::vector<uint8_t> data_slice(alias_buffer[i].begin() + 3, alias_buffer[i].begin() + 9);
+    ss << uint8_vector_to_hex_string(data_slice).substr(1);
   }
 
   return ss.str();
@@ -167,14 +171,12 @@ OTAAlias UnitTagsOTA::decode_motorola_alias_p2(const std::array<std::vector<uint
     return OTAAlias();
   }
 
-  BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: Assembled Payload: " << payload_hex;
-
   // Extract components
   std::string tg = payload_hex.substr(0, 4);           // Talkgroup ID
   std::string msg_count = payload_hex.substr(4, 2);    // # of Data blocks
-  std::string unknown1_4 = payload_hex.substr(6, 4);   // [unknown] - format?
+  std::string unknown_4 = payload_hex.substr(6, 4);    // [unknown] - format?
   std::string sequence_id = payload_hex.substr(10, 1); // Sequence ID char
-  std::string unknown2_1 = payload_hex.substr(11, 1);  // [unknown]
+  std::string unknown_1 = payload_hex.substr(11, 1);   // [unknown] - check digit?
   std::string wacn = payload_hex.substr(12, 5);        // WACN
   std::string sys = payload_hex.substr(17, 3);         // System ID
   std::string radio = payload_hex.substr(20, 6);       // Radio ID
@@ -219,16 +221,10 @@ OTAAlias UnitTagsOTA::decode_motorola_alias_p2(const std::array<std::vector<uint
   BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: CRC-16/GSM check passed";
 
   // Convert hex string to bytes
-  std::vector<int8_t> payload_bytes;
-  for (size_t i = 0; i + 1 < crc_payload.length(); i += 2) {
-    std::istringstream iss(crc_payload.substr(i, 2));
-    int byte;
-    if (iss >> std::hex >> byte) {
-      payload_bytes.push_back(static_cast<int8_t>(byte));
-    } else {
-      BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: failed to parse hex at position " << i;
-      return OTAAlias();
-    }
+  std::vector<uint8_t> payload_bytes = hex_string_to_uint8_vector(crc_payload);
+  if (payload_bytes.empty()) {
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: failed to parse hex payload";
+    return OTAAlias();
   }
 
   // Need at least 8 bytes (7 byte offset + 1 byte minimum encoded data)
@@ -246,28 +242,19 @@ OTAAlias UnitTagsOTA::decode_motorola_alias_p2(const std::array<std::vector<uint
   std::string alias = decode_mot_alias(encoded);
 
   if (!alias.empty()) {
-    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: Decoded alias: '" << alias << "' for radio " << radio_decimal << " (0x" << radio << ")";
+    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: Decoded alias: '" << alias << "' for radio " << radio_decimal << " (0x" << radio << ")" << ", TG: " << tg_decimal << " (0x" << tg << ")";
     return OTAAlias(radio_decimal, alias, "MotoP25_TDMA", wacn, sys, tg_decimal);
-  } else {
-    BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: Decrypt returned empty alias";
   }
 
+  BOOST_LOG_TRIVIAL(debug) << "MOTOROLA P2: Decrypt returned empty alias";
   return OTAAlias();
 }
 
 // Validate CRC-16/GSM checksum
 bool UnitTagsOTA::validate_crc(const std::string& payload_hex, const std::string& checksum_hex) {
   // Convert hex string to bytes
-  std::vector<int8_t> payload_bytes;
-  for (size_t i = 0; i + 1 < payload_hex.length(); i += 2) {
-    std::istringstream iss(payload_hex.substr(i, 2));
-    int byte;
-    if (iss >> std::hex >> byte) {
-      payload_bytes.push_back(static_cast<int8_t>(byte));
-    } else {
-      return false;
-    }
-  }
+  std::vector<uint8_t> payload_bytes = hex_string_to_uint8_vector(payload_hex);
+  if (payload_bytes.empty()) return false;
 
   // Calculate CRC-16/GSM
   uint16_t crc = 0x0000;
@@ -394,5 +381,16 @@ std::string UnitTagsOTA::uint8_vector_to_hex_string(const std::vector<uint8_t>& 
         result.push_back(hex[c % 16]);
     }
 
+    return result;
+}
+// Convert hex string to vector of int8_t
+std::vector<uint8_t> UnitTagsOTA::hex_string_to_uint8_vector(const std::string& hex_str) {
+    std::vector<uint8_t> result;
+    result.reserve(hex_str.length() / 2);
+    for (size_t i = 0; i + 1 < hex_str.length(); i += 2) {
+        int hi = (hex_str[i] <= '9') ? hex_str[i] - '0' : (hex_str[i] & 0xF) + 9;
+        int lo = (hex_str[i+1] <= '9') ? hex_str[i+1] - '0' : (hex_str[i+1] & 0xF) + 9;
+        result.push_back(static_cast<uint8_t>((hi << 4) | lo));
+    }
     return result;
 }
