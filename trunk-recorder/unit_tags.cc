@@ -113,6 +113,15 @@ void UnitTags::load_unit_tags_ota(std::string filename) {
         BOOST_LOG_TRIVIAL(info) << lines_needing_update << " OTA tags loaded from old CSV format (will be updated with metadata on next decode)";
       }
       
+      // Check if data is already sorted by unit_id
+      bool is_sorted = true;
+      for (size_t i = 1; i < unit_tags_ota.size(); i++) {
+        if (unit_tags_ota[i-1]->unit_id > unit_tags_ota[i]->unit_id) {
+          is_sorted = false;
+          break;
+        }
+      }
+      
       // Deduplicate: keep newest entry per unit_id
       std::map<long, UnitTagOTA*> unique_tags;
       int duplicates_removed = 0;
@@ -140,8 +149,13 @@ void UnitTags::load_unit_tags_ota(std::string filename) {
         }
       }
       
-      if (duplicates_removed > 0) {
-        BOOST_LOG_TRIVIAL(info) << "Found " << duplicates_removed << " duplicate OTA entries, rewriting CSV with " << unique_tags.size() << " unique entries";
+      if (duplicates_removed > 0 || !is_sorted) {
+        if (duplicates_removed > 0) {
+          BOOST_LOG_TRIVIAL(info) << "Found " << duplicates_removed << " duplicate OTA entries";
+        }
+        if (!is_sorted) {
+          BOOST_LOG_TRIVIAL(info) << "OTA CSV is unsorted, reorganizing by unit ID";
+        }
         
         unit_tags_ota.clear();
         for (auto &pair : unique_tags) {
@@ -168,13 +182,13 @@ void UnitTags::load_unit_tags_ota(std::string filename) {
             out.close();
             
             if (std::rename(temp_file.c_str(), filename.c_str()) == 0) {
-              BOOST_LOG_TRIVIAL(info) << "OTA CSV deduplicated successfully";
+              BOOST_LOG_TRIVIAL(info) << "OTA CSV cleaned and sorted successfully (" << unique_tags.size() << " entries)";
             } else {
-              BOOST_LOG_TRIVIAL(error) << "Failed to rename deduplicated CSV";
+              BOOST_LOG_TRIVIAL(error) << "Failed to rename cleaned CSV";
             }
           }
         } catch (std::exception &e) {
-          BOOST_LOG_TRIVIAL(error) << "Error rewriting deduplicated CSV: " << e.what();
+          BOOST_LOG_TRIVIAL(error) << "Error rewriting CSV: " << e.what();
         }
       }
     }
