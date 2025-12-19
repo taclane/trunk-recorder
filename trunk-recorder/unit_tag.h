@@ -23,10 +23,10 @@ public:
   std::string source;
   std::string wacn;
   std::string sys;
-  unsigned long talkgroup_id;
+  long talkgroup_id;
   time_t timestamp;
 
-  UnitTagOTA(long id, std::string a, std::string src, std::string w, std::string s, unsigned long tg, time_t ts);
+  UnitTagOTA(long id, std::string a, std::string src, std::string w, std::string s, long tg, time_t ts);
 };
 
 #endif // UNIT_TAG_H

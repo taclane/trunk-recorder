@@ -84,34 +84,29 @@ void UnitTags::load_unit_tags_ota(std::string filename) {
         continue;
       }
 
+      // Mandatory fields
       long unit_id = std::stol(row["unit_id"].get<>());
       std::string tag = row["tag"].get<>();
-      std::string source = row["source"].get<>();
-      time_t ts = std::stol(row["timestamp"].get<>());
       
-      UnitTagOTA *ota_tag = nullptr;
+      // Optional fields with defaults
+      std::string source = (row.size() >= 3) ? row["source"].get<>() : "";
+      time_t ts = (row.size() >= 4) ? std::stol(row["timestamp"].get<>()) : 0;
+      std::string wacn = (row.size() >= 7) ? row["wacn"].get<>() : "";
+      std::string sys = (row.size() >= 7) ? row["sys"].get<>() : "";
+      std::string tg_str = (row.size() >= 7) ? row["talkgroup_id"].get<>() : "";
+      long tg = tg_str.empty() ? -1 : std::stol(tg_str);
       
-      if (row.size() >= 7) {
-        // New format with metadata fields
-        std::string wacn = row["wacn"].get<>();
-        std::string sys = row["sys"].get<>();
-        unsigned long tg = std::stoul(row["talkgroup_id"].get<>());
-        ota_tag = new UnitTagOTA(unit_id, tag, source, wacn, sys, tg, ts);
-      } else {
-        // Legacy 4-field format
-        ota_tag = new UnitTagOTA(unit_id, tag, source, "", "", 0, ts);
+      if (wacn.empty()) {
         lines_needing_update++;
       }
       
+      UnitTagOTA *ota_tag = new UnitTagOTA(unit_id, tag, source, wacn, sys, tg, ts);
       unit_tags_ota.push_back(ota_tag);
       lines_loaded++;
     }
     
     if (lines_loaded > 0) {
       BOOST_LOG_TRIVIAL(info) << "Loaded " << lines_loaded << " OTA unit tags.";
-      if (lines_needing_update > 0) {
-        BOOST_LOG_TRIVIAL(info) << lines_needing_update << " OTA tags loaded from old CSV format (will be updated with metadata on next decode)";
-      }
       
       // Check if data is already sorted by unit_id
       bool is_sorted = true;
@@ -149,12 +144,15 @@ void UnitTags::load_unit_tags_ota(std::string filename) {
         }
       }
       
-      if (duplicates_removed > 0 || !is_sorted) {
+      if (duplicates_removed > 0 || !is_sorted || lines_needing_update > 0) {
         if (duplicates_removed > 0) {
-          BOOST_LOG_TRIVIAL(info) << "Found " << duplicates_removed << " duplicate OTA entries";
+          BOOST_LOG_TRIVIAL(info) << " Found " << duplicates_removed << " duplicate OTA entries";
         }
         if (!is_sorted) {
-          BOOST_LOG_TRIVIAL(info) << "OTA CSV is unsorted, reorganizing by unit ID";
+          BOOST_LOG_TRIVIAL(info) << " OTA CSV is unsorted, reorganizing by unit ID";
+        }
+        if (lines_needing_update > 0) {
+          BOOST_LOG_TRIVIAL(info) << " " << lines_needing_update << " OTA tags with incomplete metadata, will update as discovered";
         }
         
         unit_tags_ota.clear();
@@ -176,7 +174,7 @@ void UnitTags::load_unit_tags_ota(std::string filename) {
                 std::to_string(ota_tag->timestamp),
                 ota_tag->wacn,
                 ota_tag->sys,
-                std::to_string(ota_tag->talkgroup_id)
+                (ota_tag->talkgroup_id == -1) ? "" : std::to_string(ota_tag->talkgroup_id)
               };
             }
             out.close();
@@ -284,14 +282,18 @@ bool UnitTags::add_ota(const OTAAlias& ota_alias) {
   
   if (existing_ota) {
     if (existing_ota->alias == ota_alias.alias) {
-      // Enrich old entries with newly decoded metadata
-      if (existing_ota->wacn.empty() && !ota_alias.wacn.empty()) {
+      // check if decode metadata is missing
+      bool needs_enrichment = (existing_ota->wacn.empty() && !ota_alias.wacn.empty()) ||
+                              (existing_ota->sys.empty() && !ota_alias.sys.empty()) ||
+                              (existing_ota->talkgroup_id == -1 && ota_alias.talkgroup_id != -1);
+      
+      if (needs_enrichment) {
         BOOST_LOG_TRIVIAL(debug) << "Unit " << ota_alias.radio_id << " (" << ota_alias.alias << "): enriching with metadata (WACN: " << ota_alias.wacn << ", SYS: " << ota_alias.sys << ", TG: " << ota_alias.talkgroup_id << ")";
         
-        existing_ota->source = ota_alias.source;
-        existing_ota->wacn = ota_alias.wacn;
-        existing_ota->sys = ota_alias.sys;
-        existing_ota->talkgroup_id = ota_alias.talkgroup_id;
+        if (!ota_alias.source.empty()) existing_ota->source = ota_alias.source;
+        if (!ota_alias.wacn.empty()) existing_ota->wacn = ota_alias.wacn;
+        if (!ota_alias.sys.empty()) existing_ota->sys = ota_alias.sys;
+        if (ota_alias.talkgroup_id != -1) existing_ota->talkgroup_id = ota_alias.talkgroup_id;
         existing_ota->timestamp = std::time(nullptr);
         
         // Append enriched entry to CSV
@@ -300,7 +302,7 @@ bool UnitTags::add_ota(const OTAAlias& ota_alias) {
             std::ofstream out(ota_filename, std::ios::app);
             if (out.is_open()) {
               CSVWriter<std::ofstream> writer(out);
-              writer << std::vector<std::string>{std::to_string(ota_alias.radio_id), ota_alias.alias, ota_alias.source, std::to_string(existing_ota->timestamp), ota_alias.wacn, ota_alias.sys, std::to_string(ota_alias.talkgroup_id)};
+              writer << std::vector<std::string>{std::to_string(ota_alias.radio_id), ota_alias.alias, ota_alias.source, std::to_string(existing_ota->timestamp), ota_alias.wacn, ota_alias.sys, (ota_alias.talkgroup_id == -1) ? "" : std::to_string(ota_alias.talkgroup_id)};
               out.close();
             } else {
               BOOST_LOG_TRIVIAL(error) << "Failed to open " << ota_filename << " for appending enriched entry";
@@ -326,7 +328,7 @@ bool UnitTags::add_ota(const OTAAlias& ota_alias) {
       std::ofstream out(ota_filename, std::ios::app);
       if (out.is_open()) {
         CSVWriter<std::ofstream> writer(out);
-        writer << std::vector<std::string>{std::to_string(ota_alias.radio_id), ota_alias.alias, ota_alias.source, std::to_string(ota_tag->timestamp), ota_alias.wacn, ota_alias.sys, std::to_string(ota_alias.talkgroup_id)};
+        writer << std::vector<std::string>{std::to_string(ota_alias.radio_id), ota_alias.alias, ota_alias.source, std::to_string(ota_tag->timestamp), ota_alias.wacn, ota_alias.sys, (ota_alias.talkgroup_id == -1) ? "" : std::to_string(ota_alias.talkgroup_id)};
         out.close();
       } else {
         BOOST_LOG_TRIVIAL(error) << "Failed to open " << ota_filename << " for writing OTA alias.";

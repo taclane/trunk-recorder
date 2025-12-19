@@ -340,7 +340,7 @@ std::string UnitTagsOTA::decode_mot_alias(const std::vector<int8_t>& encoded) {
     //   Sets LSB to ensure odd number (required for inverse to exist in mod 256)
     //   Then find x where: x * modulus ≡ 1 (mod 256)
     uint8_t modulus = static_cast<uint8_t>(lcg_value | 0x1);
-    // Lookup the precomputed inverse instead of calculating it each time!
+    //   Lookup the precomputed inverse instead of calculating it each time!
     uint8_t inverse = MODULAR_INVERSE_ODD[modulus >> 1];
     
      // Step 5: Final decode - multiply by modular inverse
@@ -351,14 +351,13 @@ std::string UnitTagsOTA::decode_mot_alias(const std::vector<int8_t>& encoded) {
   }
 
   // Reconstruct alias string from decoded bytes
-  // Data is stored as big-endian 16-bit characters (UTF-16 BE subset)
   std::string alias;
   alias.reserve(decoded.size() / 2);
   
   for (size_t i = 0; i + 1 < decoded.size(); i += 2) {
     uint16_t codepoint = (static_cast<uint16_t>(decoded[i]) << 8) | decoded[i + 1];
     
-    // Only output printable ASCII
+    // Only output printable ASCII; unknown if extended character sets are supported
     if (codepoint > 31 && codepoint < 128) {
       alias += static_cast<char>(codepoint);
     }
@@ -371,7 +370,7 @@ std::string UnitTagsOTA::decode_mot_alias(const std::vector<int8_t>& encoded) {
 std::string UnitTagsOTA::uint8_vector_to_hex_string(const std::vector<uint8_t>& v)
 {
     std::string result;
-    result.reserve(v.size() * 2);   // two digits per character
+    result.reserve(v.size() * 2);
 
     static constexpr char hex[] = "0123456789abcdef";
 

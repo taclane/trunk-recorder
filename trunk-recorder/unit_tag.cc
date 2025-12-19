@@ -6,7 +6,7 @@ UnitTag::UnitTag(std::string p, std::string t) {
   tag = t;
 }
 
-UnitTagOTA::UnitTagOTA(long id, std::string a, std::string src, std::string w, std::string s, unsigned long tg, time_t ts) {
+UnitTagOTA::UnitTagOTA(long id, std::string a, std::string src, std::string w, std::string s, long tg, time_t ts) {
   unit_id = id;
   alias = a;
   source = src;
