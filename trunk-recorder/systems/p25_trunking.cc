@@ -2,8 +2,8 @@
 #include "p25_trunking.h"
 #include <boost/log/trivial.hpp>
 
-p25_trunking_sptr make_p25_trunking(double freq, double center, long s, gr::msg_queue::sptr queue, bool qpsk, int sys_num) {
-  return gnuradio::get_initial_sptr(new p25_trunking(freq, center, s, queue, qpsk, sys_num));
+p25_trunking_sptr make_p25_trunking(double freq, double center, long s, gr::msg_queue::sptr queue, bool qpsk, int sys_num, P25QpskLoopSettings qpsk_loop_settings) {
+  return gnuradio::get_initial_sptr(new p25_trunking(freq, center, s, queue, qpsk, sys_num, qpsk_loop_settings));
 }
 
 void p25_trunking::initialize_fsk4() {
@@ -59,8 +59,8 @@ void p25_trunking::initialize_qpsk() {
   samples_per_symbol = phase1_samples_per_symbol;
   symbol_rate = phase1_symbol_rate;
   // Gardner Costas Clock
-  double gain_mu = 0.025; // 0.025
-  double costas_alpha = 0.008;
+  double gain_mu = qpsk_loop_settings.gain_mu;
+  double costas_alpha = qpsk_loop_settings.costas_alpha;
   double omega = double(system_channel_rate) / symbol_rate; // set to 6000 for TDMA, should be symbol_rate
   double gain_omega = 0.1 * gain_mu * gain_mu;
   double fmax = 3000; // Hz
@@ -119,7 +119,7 @@ void p25_trunking::initialize_p25() {
   connect(slicer, 0, op25_frame_assembler, 0);
 }
 
-p25_trunking::p25_trunking(double f, double c, long s, gr::msg_queue::sptr queue, bool qpsk, int sys_num)
+p25_trunking::p25_trunking(double f, double c, long s, gr::msg_queue::sptr queue, bool qpsk, int sys_num, P25QpskLoopSettings qpsk_loop_settings)
     : gr::hier_block2("p25_trunking",
                       gr::io_signature::make(1, 1, sizeof(gr_complex)),
                       gr::io_signature::make(0, 0, sizeof(float))) {
@@ -130,6 +130,7 @@ p25_trunking::p25_trunking(double f, double c, long s, gr::msg_queue::sptr queue
   input_rate = s;
   rx_queue = queue;
   qpsk_mod = qpsk;
+  this->qpsk_loop_settings = qpsk_loop_settings;
 
   prefilter = xlat_channelizer::make(input_rate, channelizer::phase1_samples_per_symbol, channelizer::phase1_symbol_rate, xlat_channelizer::channel_bandwidth, center_freq, false);
 

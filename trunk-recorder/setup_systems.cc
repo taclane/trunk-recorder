@@ -164,7 +164,8 @@ bool setup_systems(Config &config, gr::top_block_sptr &tb, std::vector<Source *>
                                                      source->get_rate(),
                                                      system->get_msg_queue(),
                                                      system->get_qpsk_mod(),
-                                                     system->get_sys_num());
+                                                     system->get_sys_num(),
+                                                     static_cast<System_impl *>(system)->qpsk_loop_settings);
             tb->connect(source->get_src_block(), 0, system->p25_trunking, 0);
           }
 

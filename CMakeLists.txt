@@ -424,3 +424,14 @@ if (GR_IIO_FOUND)
 endif()
 
 install(TARGETS trunk-recorder RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+include(CTest)
+if(BUILD_TESTING)
+  add_executable(p25_qpsk_loop_settings_tests
+    tests/p25_qpsk_loop_settings_tests.cc
+  )
+  target_include_directories(p25_qpsk_loop_settings_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+  )
+  add_test(NAME p25_qpsk_loop_settings_tests COMMAND p25_qpsk_loop_settings_tests)
+endif()

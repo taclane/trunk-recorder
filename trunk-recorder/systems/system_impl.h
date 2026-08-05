@@ -92,6 +92,7 @@ public:
   std::string audio_bitrate;
   bool conversation_mode;
   bool qpsk_mod;
+  P25QpskLoopSettings qpsk_loop_settings;
   double squelch_db;
   float tau;
   double analog_levels;

@@ -61,6 +61,7 @@
 #include "../gr_blocks/freq_xlating_fft_filter.h"
 #include "../gr_blocks/channelizer.h"
 #include "../gr_blocks/xlat_channelizer.h"
+#include "p25_qpsk_loop_settings.h"
 
 class p25_trunking;
 
@@ -75,7 +76,8 @@ p25_trunking_sptr make_p25_trunking(double f,
                                     long s,
                                     gr::msg_queue::sptr queue,
                                     bool qpsk,
-                                    int sys_num);
+                                    int sys_num,
+                                    P25QpskLoopSettings qpsk_loop_settings = {});
 
 class p25_trunking : public gr::hier_block2 {
   struct DecimSettings {
@@ -87,7 +89,8 @@ class p25_trunking : public gr::hier_block2 {
                                              long s,
                                              gr::msg_queue::sptr queue,
                                              bool qpsk,
-                                             int sys_num);
+                                             int sys_num,
+                                             P25QpskLoopSettings qpsk_loop_settings);
 
 protected:
   p25_trunking(double f,
@@ -95,7 +98,8 @@ protected:
                long s,
                gr::msg_queue::sptr queue,
                bool qpsk,
-               int sys_num);
+               int sys_num,
+               P25QpskLoopSettings qpsk_loop_settings);
 
 public:
   ~p25_trunking();
@@ -130,6 +134,7 @@ private:
   long if1;
   long if2;
   bool qpsk_mod;
+  P25QpskLoopSettings qpsk_loop_settings;
   int sys_num;
   const int phase1_samples_per_symbol = 5;
   const int phase2_samples_per_symbol = 4;

@@ -398,6 +398,23 @@ bool load_config(string config_file, Config &config, gr::top_block_sptr &tb, std
         system->set_analog_levels(analog_levels);
         system->set_digital_levels(digital_levels);
         system->set_qpsk_mod(qpsk_mod);
+        auto *system_impl = static_cast<System_impl *>(system);
+        system_impl->qpsk_loop_settings.gain_mu = element.value(
+          "qpskGainMu", P25QpskLoopSettings::default_gain_mu);
+        system_impl->qpsk_loop_settings.costas_alpha = element.value(
+          "qpskCostasAlpha", P25QpskLoopSettings::default_costas_alpha);
+        if (!system_impl->qpsk_loop_settings.valid()) {
+          BOOST_LOG_TRIVIAL(error) << "! qpskGainMu and qpskCostasAlpha must be greater than 0 and no greater than 1";
+          return false;
+        }
+        if (qpsk_mod &&
+            (system_impl->qpsk_loop_settings.gain_mu != P25QpskLoopSettings::default_gain_mu ||
+             system_impl->qpsk_loop_settings.costas_alpha != P25QpskLoopSettings::default_costas_alpha)) {
+          BOOST_LOG_TRIVIAL(info) << "QPSK control-channel loop: gain_mu="
+                                  << system_impl->qpsk_loop_settings.gain_mu
+                                  << " costas_alpha="
+                                  << system_impl->qpsk_loop_settings.costas_alpha;
+        }
         system->set_max_dev(max_dev);
         system->set_filter_width(filter_width);
         system->set_conversation_mode(conversation_mode);
