@@ -631,6 +631,7 @@ bool load_config(string config_file, Config &config, gr::top_block_sptr &tb, std
           // Source ctor is (file, repeat, center, rate, cfg) — args were
           // mis-ordered, leaving iqfile sources with center=rate and rate=0.
           source = new Source(iq_file, repeat, center, rate, &config);
+          source->set_autotune_source(element.value("autoTune", false));
         } else {
 
           std::string device = element.value("device", "");

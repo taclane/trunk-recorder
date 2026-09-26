@@ -101,7 +101,8 @@ std::vector<TrunkMessage> SmartnetParser::parse_message(gr::message::sptr msg, S
         return messages;
     }
 
-    long m_type = (msg->type() & 0xffff);
+    // Low 16 bits are a signed op25 message id (TIMEOUT is -1, BAD_OSW is -2).
+    int16_t m_type = (int16_t)(msg->type() & 0xffff);
     double m_ts = msg->arg2(); 
 
     if (m_type == M_SMARTNET_TIMEOUT) {

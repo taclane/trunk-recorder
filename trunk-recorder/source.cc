@@ -543,6 +543,10 @@ std::vector<Recorder *> Source::find_conventional_recorders_by_freq(Detected_Sig
 }
 
 void Source::enable_detected_recorders() {
+  // IQ file / SigMF sources don't create a signal detector.
+  if (!signal_detector) {
+    return;
+  }
   std::vector<Detected_Signal> signals = signal_detector->get_detected_signals();
 
   for (std::vector<Detected_Signal>::iterator it = signals.begin(); it != signals.end(); it++) {
