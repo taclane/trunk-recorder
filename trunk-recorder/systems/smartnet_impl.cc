@@ -34,6 +34,7 @@ void smartnet_impl::initialize(double freq, double center, long s, gr::msg_queue
   input_rate = s;
   rx_queue = queue;
   this->sys_num = sys_num;
+  autotune_offset = 0;
 
 
   // use_fll=false: band-edge FLL is matched to RRC-shaped signals and doesn't
@@ -55,8 +56,8 @@ void smartnet_impl::initialize(double freq, double center, long s, gr::msg_queue
 
 
 
-int smartnet_impl::get_freq_error() { // get frequency error from FLL and convert to Hz
-  return prefilter->get_freq_error();
+int smartnet_impl::get_freq_error() { // carrier offset measured by the FSK demod, in Hz
+  return fsk2_demod->get_freq_error();
 }
 
 
