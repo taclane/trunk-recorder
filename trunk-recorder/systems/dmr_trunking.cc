@@ -1,21 +1,19 @@
 #include "dmr_trunking.h"
+#include "system.h"
 #include <boost/log/trivial.hpp>
 
-dmr_trunking_sptr make_dmr_trunking(double freq, double center, long s,
-                                    gr::msg_queue::sptr queue, int sys_num) {
-  return gnuradio::get_initial_sptr(new dmr_trunking(freq, center, s, queue, sys_num));
+dmr_trunking_sptr make_dmr_trunking(double freq, double center, long s, System *system) {
+  return gnuradio::get_initial_sptr(new dmr_trunking(freq, center, s, system));
 }
 
-dmr_trunking::dmr_trunking(double f, double c, long s,
-                           gr::msg_queue::sptr queue, int sys_num)
+dmr_trunking::dmr_trunking(double f, double c, long s, System *system)
     : gr::hier_block2("dmr_trunking",
                       gr::io_signature::make(1, 1, sizeof(gr_complex)),
                       gr::io_signature::make(0, 0, sizeof(float))) {
-  this->sys_num = sys_num;
+  this->system = system;
   chan_freq = f;
   center_freq = c;
   input_rate = s;
-  rx_queue = queue;
   autotune_offset = 0;
 
   // xlat_channelizer down-converts/decimates input_rate -> 24 kHz
@@ -36,11 +34,11 @@ dmr_trunking::dmr_trunking(double f, double c, long s,
   slicer = gr::op25_repeater::fsk4_slicer_fb::make(msgq_id, debug, slices);
 
   // frame_assembler in default (no protocol forced) mode auto-detects DMR
-  // sync words and routes parsed CSBK/MBC/CACH messages to rx_queue.
+  // sync words and routes parsed CSBK/MBC/CACH messages to the system's msg_queue.
   // d_soft_vocoder=false because we never need voice off the control channel.
   const char *debug_env = std::getenv("TR_DMR_TRUNKING_VERBOSITY");
   int verbosity = debug_env ? std::atoi(debug_env) : 0;
-  framer = gr::op25_repeater::frame_assembler::make("", verbosity, sys_num, rx_queue, false);
+  framer = gr::op25_repeater::frame_assembler::make("", verbosity, system->get_sys_num(), system->get_msg_queue(), false);
 
   connect(self(), 0, prefilter, 0);
   initialize_fsk4();

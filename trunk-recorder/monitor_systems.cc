@@ -748,7 +748,7 @@ void retune_system(System *sys, gr::top_block_sptr &tb, std::vector<Source *> &s
           // sub-blocks (prefilter, fsk2_demod, framer) are torn down deterministically
           // instead of overlapping with the replacement.
           system->smartnet_trunking.reset();
-          system->smartnet_trunking = smartnet_impl::make(control_channel_freq, source->get_center(), source->get_rate(), system->get_msg_queue(), system->get_sys_num());
+          system->smartnet_trunking = smartnet_impl::make(control_channel_freq, source->get_center(), source->get_rate(), system);
           tb->connect(source->get_src_block(), 0, system->smartnet_trunking, 0);
           tb->unlock();
         } else if (system->get_system_type() == "p25") {
@@ -759,7 +759,7 @@ void retune_system(System *sys, gr::top_block_sptr &tb, std::vector<Source *> &s
           //   approaches. See PR #1090 )
           tb->lock();
           tb->disconnect(current_source->get_src_block(), 0, system->p25_trunking, 0);
-          system->p25_trunking = make_p25_trunking(control_channel_freq, source->get_center(), source->get_rate(), system->get_msg_queue(), system->get_qpsk_mod(), system->get_sys_num());
+          system->p25_trunking = make_p25_trunking(control_channel_freq, source->get_center(), source->get_rate(), system);
           tb->connect(source->get_src_block(), 0, system->p25_trunking, 0);
           tb->unlock();
         } else if (system->get_system_type() == "dmr") {
@@ -767,7 +767,7 @@ void retune_system(System *sys, gr::top_block_sptr &tb, std::vector<Source *> &s
           tb->lock();
           tb->disconnect(current_source->get_src_block(), 0, system->dmr_trunking, 0);
           system->dmr_trunking.reset();
-          system->dmr_trunking = make_dmr_trunking(control_channel_freq, source->get_center(), source->get_rate(), system->get_msg_queue(), system->get_sys_num());
+          system->dmr_trunking = make_dmr_trunking(control_channel_freq, source->get_center(), source->get_rate(), system);
           tb->connect(source->get_src_block(), 0, system->dmr_trunking, 0);
           tb->unlock();
         } else {

@@ -309,6 +309,10 @@ bool p25_recorder_impl::start(Call *call) {
   if (state == INACTIVE) {
     System *system = call->get_system();
     qpsk_mod = system->get_qpsk_mod();
+    if (qpsk_mod) {
+      // Recorders are shared across Systems on a Source, so apply this System's loop gains per call
+      qpsk_demod->set_loop_gains(system->get_qpsk_gain_mu(), system->get_qpsk_costas_loop_bw());
+    }
     set_tdma(call->get_phase2_tdma());
     if (call->get_phase2_tdma()) {
       if (!qpsk_mod) {

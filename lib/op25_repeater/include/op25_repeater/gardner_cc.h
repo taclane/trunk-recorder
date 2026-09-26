@@ -56,6 +56,8 @@ namespace gr {
                        float gain_omega,
                        float lock_threshold = 0.28);
       virtual void set_omega(float omega) {}
+      virtual void set_gain_mu(float gain_mu) {}
+      virtual void set_gain_omega(float gain_omega) {}
       virtual void reset() {}
       virtual bool locked() { return false; }
       virtual float quality() { return 0; }

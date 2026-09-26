@@ -88,6 +88,8 @@ class gardner_cc_impl : public gardner_cc
 
         //! Sets value of omega and its min and max values 
         void set_omega (float omega);
+        void set_gain_mu (float gain_mu);
+        void set_gain_omega (float gain_omega);
         void reset();
         bool locked() { return (d_lock_accum.avg() >= d_lock_threshold ? true : false); }
         float quality() { return d_lock_accum.avg(); }
