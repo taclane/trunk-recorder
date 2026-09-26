@@ -33,6 +33,7 @@
 #include "../gr_blocks/xlat_channelizer.h"
 
 class dmr_trunking;
+class System;
 
 #if GNURADIO_VERSION < 0x030900
 typedef boost::shared_ptr<dmr_trunking> dmr_trunking_sptr;
@@ -40,22 +41,20 @@ typedef boost::shared_ptr<dmr_trunking> dmr_trunking_sptr;
 typedef std::shared_ptr<dmr_trunking> dmr_trunking_sptr;
 #endif
 
-dmr_trunking_sptr make_dmr_trunking(double f, double c, long s,
-                                    gr::msg_queue::sptr queue, int sys_num);
+dmr_trunking_sptr make_dmr_trunking(double f, double c, long s, System *system);
 
 // dmr_trunking is the control-channel hier block for trunked DMR systems
 // (MOTOTRBO Capacity Plus, Capacity Max, Connect Plus, ETSI Tier III).
 //
 // It mirrors p25_trunking: a freq-xlat channelizer followed by the FSK4
 // demod chain, terminating in OP25's protocol-multiplexing frame_assembler.
-// Decoded CSBK / MBC / CACH messages are pushed to the supplied msg_queue
+// Decoded CSBK / MBC / CACH messages are pushed to the owning System's msg_queue
 // for the system's DmrParser to consume.
 class dmr_trunking : public gr::hier_block2 {
-  friend dmr_trunking_sptr make_dmr_trunking(double f, double c, long s,
-                                             gr::msg_queue::sptr queue, int sys_num);
+  friend dmr_trunking_sptr make_dmr_trunking(double f, double c, long s, System *system);
 
 protected:
-  dmr_trunking(double f, double c, long s, gr::msg_queue::sptr queue, int sys_num);
+  dmr_trunking(double f, double c, long s, System *system);
 
 public:
   ~dmr_trunking();
@@ -69,7 +68,6 @@ public:
   int autotune_offset;
 
   gr::msg_queue::sptr tune_queue;
-  gr::msg_queue::sptr rx_queue;
 
 private:
   void initialize_fsk4();
@@ -79,7 +77,8 @@ private:
   double symbol_rate;
   double center_freq, chan_freq;
   long input_rate;
-  int sys_num;
+  // Owning System - outlives this block. Only read from the main thread, not from work().
+  System *system;
 
   const int phase1_samples_per_symbol = 5;
   const double phase1_symbol_rate = 4800;

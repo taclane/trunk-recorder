@@ -1,9 +1,10 @@
 
 #include "p25_trunking.h"
+#include "system.h"
 #include <boost/log/trivial.hpp>
 
-p25_trunking_sptr make_p25_trunking(double freq, double center, long s, gr::msg_queue::sptr queue, bool qpsk, int sys_num, P25QpskLoopSettings qpsk_loop_settings) {
-  return gnuradio::get_initial_sptr(new p25_trunking(freq, center, s, queue, qpsk, sys_num, qpsk_loop_settings));
+p25_trunking_sptr make_p25_trunking(double freq, double center, long s, System *system) {
+  return gnuradio::get_initial_sptr(new p25_trunking(freq, center, s, system));
 }
 
 void p25_trunking::initialize_fsk4() {
@@ -59,8 +60,8 @@ void p25_trunking::initialize_qpsk() {
   samples_per_symbol = phase1_samples_per_symbol;
   symbol_rate = phase1_symbol_rate;
   // Gardner Costas Clock
-  double gain_mu = qpsk_loop_settings.gain_mu;
-  double costas_alpha = qpsk_loop_settings.costas_alpha;
+  double gain_mu = system->get_qpsk_gain_mu();
+  double costas_alpha = system->get_qpsk_costas_alpha();
   double omega = double(system_channel_rate) / symbol_rate; // set to 6000 for TDMA, should be symbol_rate
   double gain_omega = 0.1 * gain_mu * gain_mu;
   double fmax = 3000; // Hz
@@ -113,31 +114,28 @@ void p25_trunking::initialize_p25() {
   bool do_tdma = 0;
   bool do_nocrypt = 1;
   bool soft_vocoder = false;
-  op25_frame_assembler = gr::op25_repeater::p25_frame_assembler::make(silence_frames, soft_vocoder, wireshark_host, udp_port, verbosity, do_imbe, do_output, do_msgq, rx_queue, do_audio_output, do_tdma, do_nocrypt);
+  op25_frame_assembler = gr::op25_repeater::p25_frame_assembler::make(silence_frames, soft_vocoder, wireshark_host, udp_port, verbosity, do_imbe, do_output, do_msgq, system->get_msg_queue(), do_audio_output, do_tdma, do_nocrypt);
   autotune_offset = 0;
 
   connect(slicer, 0, op25_frame_assembler, 0);
 }
 
-p25_trunking::p25_trunking(double f, double c, long s, gr::msg_queue::sptr queue, bool qpsk, int sys_num, P25QpskLoopSettings qpsk_loop_settings)
+p25_trunking::p25_trunking(double f, double c, long s, System *system)
     : gr::hier_block2("p25_trunking",
                       gr::io_signature::make(1, 1, sizeof(gr_complex)),
                       gr::io_signature::make(0, 0, sizeof(float))) {
 
-  this->sys_num = sys_num;
+  this->system = system;
   chan_freq = f;
   center_freq = c;
   input_rate = s;
-  rx_queue = queue;
-  qpsk_mod = qpsk;
-  this->qpsk_loop_settings = qpsk_loop_settings;
 
   prefilter = xlat_channelizer::make(input_rate, channelizer::phase1_samples_per_symbol, channelizer::phase1_symbol_rate, xlat_channelizer::channel_bandwidth, center_freq, false);
 
   initialize_p25();
 
   connect(self(),0, prefilter, 0);
-  if (!qpsk_mod) {
+  if (!system->get_qpsk_mod()) {
     initialize_fsk4();
   } else {
     initialize_qpsk();
@@ -165,7 +163,7 @@ void p25_trunking::tune_freq(double f) {
   chan_freq = f;
   int offset_amount = (center_freq - f);
   prefilter->tune_offset(offset_amount);
-  if (qpsk_mod) {
+  if (system->get_qpsk_mod()) {
     costas->set_phase(0);
     costas->set_frequency(0);
   } else {

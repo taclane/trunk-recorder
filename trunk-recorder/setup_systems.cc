@@ -153,8 +153,7 @@ bool setup_systems(Config &config, gr::top_block_sptr &tb, std::vector<Source *>
             system->smartnet_trunking = smartnet_impl::make(control_channel_freq,
                                                                source->get_center(),
                                                                source->get_rate(),
-                                                               system->get_msg_queue(),
-                                                               system->get_sys_num());
+                                                               system);
             tb->connect(source->get_src_block(), 0, system->smartnet_trunking, 0);
           }
 
@@ -162,10 +161,7 @@ bool setup_systems(Config &config, gr::top_block_sptr &tb, std::vector<Source *>
             system->p25_trunking = make_p25_trunking(control_channel_freq,
                                                      source->get_center(),
                                                      source->get_rate(),
-                                                     system->get_msg_queue(),
-                                                     system->get_qpsk_mod(),
-                                                     system->get_sys_num(),
-                                                     static_cast<System_impl *>(system)->qpsk_loop_settings);
+                                                     system);
             tb->connect(source->get_src_block(), 0, system->p25_trunking, 0);
           }
 
@@ -176,8 +172,7 @@ bool setup_systems(Config &config, gr::top_block_sptr &tb, std::vector<Source *>
             system->dmr_trunking = make_dmr_trunking(control_channel_freq,
                                                     source->get_center(),
                                                     source->get_rate(),
-                                                    system->get_msg_queue(),
-                                                    system->get_sys_num());
+                                                    system);
             tb->connect(source->get_src_block(), 0, system->dmr_trunking, 0);
           }
 

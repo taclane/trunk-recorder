@@ -203,6 +203,8 @@ System_impl::System_impl(int sys_num) {
   d_fsync_enabled = false;
   d_star_enabled = false;
   d_tps_enabled = false;
+  qpsk_gain_mu = 0.025;
+  qpsk_costas_alpha = 0.008;
   retune_attempts = 0;
   message_count = 0;
   decode_rate = 0;
@@ -369,6 +371,22 @@ void System_impl::set_qpsk_mod(bool m) {
 
 bool System_impl::get_qpsk_mod() {
   return qpsk_mod;
+}
+
+void System_impl::set_qpsk_gain_mu(double g) {
+  qpsk_gain_mu = g;
+}
+
+double System_impl::get_qpsk_gain_mu() {
+  return qpsk_gain_mu;
+}
+
+void System_impl::set_qpsk_costas_alpha(double a) {
+  qpsk_costas_alpha = a;
+}
+
+double System_impl::get_qpsk_costas_alpha() {
+  return qpsk_costas_alpha;
 }
 
 void System_impl::set_mdc_enabled(bool b) { d_mdc_enabled = b; };

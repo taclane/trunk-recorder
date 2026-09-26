@@ -92,7 +92,8 @@ public:
   std::string audio_bitrate;
   bool conversation_mode;
   bool qpsk_mod;
-  P25QpskLoopSettings qpsk_loop_settings;
+  double qpsk_gain_mu;
+  double qpsk_costas_alpha;
   double squelch_db;
   float tau;
   double analog_levels;
@@ -218,6 +219,10 @@ public:
   double get_digital_levels() override;
   void set_qpsk_mod(bool m) override;
   bool get_qpsk_mod() override;
+  void set_qpsk_gain_mu(double g) override;
+  double get_qpsk_gain_mu() override;
+  void set_qpsk_costas_alpha(double a) override;
+  double get_qpsk_costas_alpha() override;
   void set_squelch_db(double s) override;
   double get_squelch_db() override;
   void set_tau(float tau) override;

@@ -28,6 +28,7 @@
 #include "smartnet_fsk2_demod.h"
 
 class smartnet_impl;
+class System;
 
 
 
@@ -42,13 +43,11 @@ class smartnet_impl : public gr::hier_block2 {
     static sptr make(double f,
                                         double c,
                                         long s,
-                                        gr::msg_queue::sptr queue,
-                                        int sys_num);
+                                        System *system);
   smartnet_impl(double f,
                double c,
                long s,
-               gr::msg_queue::sptr queue,
-               int sys_num);
+               System *system);
 
 
   ~smartnet_impl();
@@ -64,14 +63,13 @@ class smartnet_impl : public gr::hier_block2 {
   void finetune_control_freq(double f);
   int autotune_offset;
 
-  gr::msg_queue::sptr rx_queue;
-
 private:
-  void initialize(double freq, double center, long s, gr::msg_queue::sptr queue, int sys_num);
+  void initialize(double freq, double center, long s);
 
   double center_freq, chan_freq;
   long input_rate;
-  int sys_num;
+  // Owning System - outlives this block. Only read from the main thread, not from work().
+  System *system;
 
 
   //channelizer::sptr prefilter;

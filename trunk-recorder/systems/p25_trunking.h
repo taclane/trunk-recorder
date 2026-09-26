@@ -61,9 +61,9 @@
 #include "../gr_blocks/freq_xlating_fft_filter.h"
 #include "../gr_blocks/channelizer.h"
 #include "../gr_blocks/xlat_channelizer.h"
-#include "p25_qpsk_loop_settings.h"
 
 class p25_trunking;
+class System;
 
 #if GNURADIO_VERSION < 0x030900
 typedef boost::shared_ptr<p25_trunking> p25_trunking_sptr;
@@ -74,10 +74,7 @@ typedef std::shared_ptr<p25_trunking> p25_trunking_sptr;
 p25_trunking_sptr make_p25_trunking(double f,
                                     double c,
                                     long s,
-                                    gr::msg_queue::sptr queue,
-                                    bool qpsk,
-                                    int sys_num,
-                                    P25QpskLoopSettings qpsk_loop_settings = {});
+                                    System *system);
 
 class p25_trunking : public gr::hier_block2 {
   struct DecimSettings {
@@ -87,19 +84,13 @@ class p25_trunking : public gr::hier_block2 {
   friend p25_trunking_sptr make_p25_trunking(double f,
                                              double c,
                                              long s,
-                                             gr::msg_queue::sptr queue,
-                                             bool qpsk,
-                                             int sys_num,
-                                             P25QpskLoopSettings qpsk_loop_settings);
+                                             System *system);
 
 protected:
   p25_trunking(double f,
                double c,
                long s,
-               gr::msg_queue::sptr queue,
-               bool qpsk,
-               int sys_num,
-               P25QpskLoopSettings qpsk_loop_settings);
+               System *system);
 
 public:
   ~p25_trunking();
@@ -115,7 +106,6 @@ public:
 
   gr::msg_queue::sptr tune_queue;
   gr::msg_queue::sptr traffic_queue;
-  gr::msg_queue::sptr rx_queue;
 
 private:
   void initialize_qpsk();
@@ -133,9 +123,8 @@ private:
   bool double_decim;
   long if1;
   long if2;
-  bool qpsk_mod;
-  P25QpskLoopSettings qpsk_loop_settings;
-  int sys_num;
+  // Owning System - outlives this block. Only read from the main thread, not from work().
+  System *system;
   const int phase1_samples_per_symbol = 5;
   const int phase2_samples_per_symbol = 4;
   const double phase1_symbol_rate = 4800;
