@@ -108,6 +108,20 @@ gardner_cc_impl::reset()
 }
 
 void
+gardner_cc_impl::set_gain_mu (float gain_mu)
+{
+    gr::thread::scoped_lock lock(d_mutex);
+    d_gain_mu = gain_mu;
+}
+
+void
+gardner_cc_impl::set_gain_omega (float gain_omega)
+{
+    gr::thread::scoped_lock lock(d_mutex);
+    d_gain_omega = gain_omega;
+}
+
+void
 gardner_cc_impl::set_omega (float omega)
 {
     gr::thread::scoped_lock lock(d_mutex);

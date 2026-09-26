@@ -132,8 +132,8 @@ public:
   virtual bool get_qpsk_mod() = 0;
   virtual void set_qpsk_gain_mu(double g) = 0;
   virtual double get_qpsk_gain_mu() = 0;
-  virtual void set_qpsk_costas_alpha(double a) = 0;
-  virtual double get_qpsk_costas_alpha() = 0;
+  virtual void set_qpsk_costas_loop_bw(double bw) = 0;
+  virtual double get_qpsk_costas_loop_bw() = 0;
   virtual void set_squelch_db(double s) = 0;
   virtual double get_squelch_db() = 0;
   virtual void set_tau(float tau) = 0;

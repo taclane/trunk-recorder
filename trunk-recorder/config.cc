@@ -399,15 +399,15 @@ bool load_config(string config_file, Config &config, gr::top_block_sptr &tb, std
         system->set_digital_levels(digital_levels);
         system->set_qpsk_mod(qpsk_mod);
         double qpsk_gain_mu = element.value("qpskGainMu", 0.025);
-        double qpsk_costas_alpha = element.value("qpskCostasAlpha", 0.008);
-        if (qpsk_gain_mu <= 0.0 || qpsk_gain_mu > 1.0 || qpsk_costas_alpha <= 0.0 || qpsk_costas_alpha > 1.0) {
-          BOOST_LOG_TRIVIAL(error) << "! qpskGainMu and qpskCostasAlpha must be greater than 0 and no greater than 1";
+        double qpsk_costas_loop_bw = element.value("qpskCostasLoopBw", 0.008);
+        if (qpsk_gain_mu <= 0.0 || qpsk_gain_mu > 1.0 || qpsk_costas_loop_bw <= 0.0 || qpsk_costas_loop_bw > 1.0) {
+          BOOST_LOG_TRIVIAL(error) << "! qpskGainMu and qpskCostasLoopBw must be greater than 0 and no greater than 1";
           return false;
         }
         system->set_qpsk_gain_mu(qpsk_gain_mu);
-        system->set_qpsk_costas_alpha(qpsk_costas_alpha);
-        if (qpsk_mod && (element.contains("qpskGainMu") || element.contains("qpskCostasAlpha"))) {
-          BOOST_LOG_TRIVIAL(info) << "QPSK Control Channel Loop: Gain Mu: " << qpsk_gain_mu << " Costas Alpha: " << qpsk_costas_alpha;
+        system->set_qpsk_costas_loop_bw(qpsk_costas_loop_bw);
+        if (qpsk_mod && (element.contains("qpskGainMu") || element.contains("qpskCostasLoopBw"))) {
+          BOOST_LOG_TRIVIAL(info) << "QPSK Loop: Gain Mu: " << qpsk_gain_mu << " Costas Loop BW: " << qpsk_costas_loop_bw;
         }
         system->set_max_dev(max_dev);
         system->set_filter_width(filter_width);

@@ -85,6 +85,7 @@ public:
     virtual void set_frequency(float freq) { }
     virtual void set_phase(float phase) { }
     virtual void set_max_phase(float phase) { }
+    virtual void set_loop_bandwidth(float bw) { }
 };
 
 } /* namespace op25_repeater */

@@ -61,13 +61,13 @@ void p25_trunking::initialize_qpsk() {
   symbol_rate = phase1_symbol_rate;
   // Gardner Costas Clock
   double gain_mu = system->get_qpsk_gain_mu();
-  double costas_alpha = system->get_qpsk_costas_alpha();
+  double costas_loop_bw = system->get_qpsk_costas_loop_bw();
   double omega = double(system_channel_rate) / symbol_rate; // set to 6000 for TDMA, should be symbol_rate
   double gain_omega = 0.1 * gain_mu * gain_mu;
   double fmax = 3000; // Hz
   fmax = 2 * pi * fmax / double(system_channel_rate);
 
-  costas = gr::op25_repeater::costas_loop_cc::make(costas_alpha,  4, (2 * pi)/4 ); 
+  costas = gr::op25_repeater::costas_loop_cc::make(costas_loop_bw,  4, (2 * pi)/4 ); 
   clock = gr::op25_repeater::gardner_cc::make(omega, gain_mu, gain_omega);
 
   // QPSK: Perform Differential decoding on the constellation

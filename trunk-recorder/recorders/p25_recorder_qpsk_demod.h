@@ -50,6 +50,7 @@ public:
   p25_recorder_qpsk_demod();
   virtual ~p25_recorder_qpsk_demod();
   void switch_tdma(bool phase2);
+  void set_loop_gains(double gain_mu, double costas_loop_bw);
   void reset();
 
 private:
