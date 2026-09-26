@@ -175,6 +175,7 @@ struct Call_Data_t {
   std::vector<Transmission> transmission_list;
 
   Call_Data_Status status;
+  time_t conclusion_time;
   time_t process_call_time;
   int retry_attempt;
 

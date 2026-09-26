@@ -301,8 +301,58 @@ public:
 
     mime = curl_mime_init(curl);
 
+    /*
+     * Broadcastify calculates node skew from the call end timestamp.
+     *
+     * Trunk Recorder's normal start/stop timestamps describe the retained
+     * over-the-air transmissions. A call can remain active after its final
+     * transmission while waiting for the call inactivity timeout, which can
+     * make a promptly uploaded call appear stale to Broadcastify.
+     *
+     * Build a Broadcastify-specific metadata timeline representing the
+     * concatenated playable audio ending when the call was concluded. Keep the
+     * original call metadata unchanged for local archives and other uploaders.
+     *
+     * conclusion_time is captured once when Call_Data_t is created and is
+     * preserved across retries, so retrying an old call does not make it appear
+     * artificially fresh.
+     */
+    json broadcastify_json = call_info.call_json;
+    if (call_info.call_length_ms > 0 && call_info.conclusion_time > 0) {
+      const std::int64_t adjusted_stop_ms =
+          static_cast<std::int64_t>(call_info.conclusion_time) * 1000;
+      const std::int64_t adjusted_start_ms =
+          adjusted_stop_ms - call_info.call_length_ms;
+      const double adjusted_start =
+          static_cast<double>(adjusted_start_ms) / 1000.0;
+
+      broadcastify_json["start_time_ms"] = adjusted_start_ms;
+      broadcastify_json["start_time"] =
+          static_cast<time_t>(adjusted_start_ms / 1000);
+
+      broadcastify_json["stop_time_ms"] = adjusted_stop_ms;
+      broadcastify_json["stop_time"] =
+          static_cast<time_t>(adjusted_stop_ms / 1000);
+
+      for (const char *list_name : {"freqList", "srcList"}) {
+        if (!broadcastify_json.contains(list_name) ||
+            !broadcastify_json[list_name].is_array()) {
+          continue;
+        }
+
+        for (auto &entry : broadcastify_json[list_name]) {
+          if (!entry.contains("pos") || !entry["pos"].is_number()) {
+            continue;
+          }
+
+          const double pos = entry["pos"].get<double>();
+          entry["time"] = adjusted_start + pos;
+        }
+      }
+    }
+
     part = curl_mime_addpart(mime);
-    curl_mime_data(part, call_info.call_json.dump().c_str(), CURL_ZERO_TERMINATED);
+    curl_mime_data(part, broadcastify_json.dump().c_str(), CURL_ZERO_TERMINATED);
     curl_mime_filename(part, "call_meta.json");
     curl_mime_type(part, "application/json");
     curl_mime_name(part, "metadata");

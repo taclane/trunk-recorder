@@ -3,6 +3,7 @@
 
 #include <boost/shared_ptr.hpp>
 #include <gnuradio/analog/pll_freqdet_cf.h>
+#include <gnuradio/analog/quadrature_demod_cf.h>
 #include <gnuradio/block.h>
 #include <gnuradio/hier_block2.h>
 #include <gnuradio/io_signature.h>
@@ -20,6 +21,8 @@
 #include <op25_repeater/include/op25_repeater/frame_assembler.h>
 #include <gnuradio/digital/binary_slicer_fb.h>
 
+#include "../gr_blocks/fsk_offset_probe.h"
+
 
 
 
@@ -28,6 +31,7 @@ class smartnet_fsk2_demod : public gr::hier_block2 {
   smartnet_fsk2_demod(gr::msg_queue::sptr queue);
   virtual ~smartnet_fsk2_demod();
   void reset();
+  int get_freq_error();
     #if GNURADIO_VERSION < 0x030900
 typedef boost::shared_ptr<smartnet_fsk2_demod> sptr;
 #else
@@ -54,6 +58,9 @@ private:
   gr::digital::binary_slicer_fb::sptr slicer;
   gr::op25_repeater::frame_assembler::sptr framer;
   gr::blocks::null_sink::sptr null_sink1;
-  gr::blocks::null_sink::sptr null_sink2; 
+  gr::blocks::null_sink::sptr null_sink2;
+  gr::analog::quadrature_demod_cf::sptr offset_demod;
+  gr::filter::fir_filter_fff::sptr offset_sym_filter;
+  fsk_offset_probe::sptr offset_probe;
 };
 #endif

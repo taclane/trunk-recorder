@@ -227,7 +227,10 @@ void print_status(std::vector<Source *> &sources, std::vector<System *> &systems
     if ((sys->get_system_type() != "conventional") && (sys->get_system_type() != "conventionalP25") && (sys->get_system_type() != "conventionalDMR") && (sys->get_system_type() != "conventionalSIGMF")) {
       BOOST_LOG_TRIVIAL(info) << "[" << sys->get_short_name() << "]\t" << format_freq(sys->get_current_control_channel()) << "\t" << sys->get_decode_rate() << " msg/sec";
       
-      if ((sys->get_source()->get_autotune_source()) && (sys->get_system_type() == "p25")) {
+      // SmartNet's offset comes from the decoded FSK levels, so only trust it
+      // while the control channel is actually decoding.
+      bool smartnet_locked = (sys->get_system_type() == "smartnet") && (sys->get_decode_rate() >= 10);
+      if ((sys->get_source()->get_autotune_source()) && ((sys->get_system_type() == "p25") || smartnet_locked)) {
         // If control channel source has autotune enabled, perform autotune adjustments and log to console
         autotune_control_channel(sys);
       }
@@ -779,7 +782,7 @@ void retune_system(System *sys, gr::top_block_sptr &tb, std::vector<Source *> &s
   if (!source_found) {
     BOOST_LOG_TRIVIAL(error) << "\t - Unable to retune System control channel, freq not covered by any source.";
   } else {
-    if ((system->get_source()->get_autotune_source()) && (system->get_system_type() == "p25")) {
+    if ((system->get_source()->get_autotune_source()) && ((system->get_system_type() == "p25") || (system->get_system_type() == "smartnet"))) {
       // If control channel source has autotune enabled, perform adjustments after retune completes
       // Don't store measurements since the control channel recorder just started
       autotune_control_channel(system, false);
@@ -932,7 +935,11 @@ int monitor_messages(Config &config, gr::top_block_sptr &tb, std::vector<Source 
         msg.reset();
         msg = system->get_msg_queue()->delete_head_nowait();
         while (msg != 0) {
-          system->set_message_count(system->get_message_count() + 1);
+          // The SmartNet framer also queues a sync timeout every second without
+          // a valid OSW; don't let those count toward the decode rate.
+          if ((system->get_system_type() != "smartnet") || ((int16_t)(msg->type() & 0xffff) == M_SMARTNET_OSW)) {
+            system->set_message_count(system->get_message_count() + 1);
+          }
 
           if (system->get_system_type() == "smartnet") {
             trunk_messages = smartnet_parser->parse_message(msg, system);

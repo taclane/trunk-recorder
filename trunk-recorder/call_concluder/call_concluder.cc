@@ -1068,7 +1068,8 @@ Call_Data_t Call_Concluder::create_call_data(Call *call, System *sys, const Conf
   Call_Data_t call_info;
 
   call_info.status               = INITIAL;
-  call_info.process_call_time    = time(nullptr);
+  call_info.conclusion_time      = time(nullptr);
+  call_info.process_call_time    = call_info.conclusion_time;
   call_info.retry_attempt        = 0;
   call_info.error_count          = 0;
   call_info.spike_count          = 0;
