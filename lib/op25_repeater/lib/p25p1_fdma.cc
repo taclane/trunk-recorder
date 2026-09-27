@@ -278,6 +278,8 @@ namespace gr {
 		}
 		void p25p1_fdma::clear() {
 			p1voice_decode.clear();
+			software_decoder.clear();   // was leaking ER/state across calls -> silent recordings
+			vocoder.clear();
 		}
 
         void p25p1_fdma::process_duid(uint32_t const duid, uint32_t const nac, const uint8_t* buf, const int len) {
@@ -908,7 +910,6 @@ namespace gr {
                                 // This is vocoder that is for half-rate
                                 software_decoder.decode_fullrate(snd, u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7], E0, ET);
                             } else {
-
                                 // This is the older, fullrate vocoder
                                 // it was copied from p25p1_voice_decode.cc
                                 int16_t frame_vector[8];
@@ -917,7 +918,7 @@ namespace gr {
                                     frame_vector[i] = u[i] & 0xFFFF;
                                 }
                                 frame_vector[7] >>= 1;
-                                vocoder.imbe_decode(frame_vector, snd);
+                                vocoder.imbe_decode_checked(frame_vector, E0, ET, snd);
                             }
 
                             if (op25audio.enabled()) {      // decoded audio goes out via UDP (normal code path)

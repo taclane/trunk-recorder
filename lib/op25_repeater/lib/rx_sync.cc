@@ -99,6 +99,15 @@ void rx_sync::sync_reset(void) {
 void rx_sync::call_end(void) {
 	p25fdma.call_end();
 	p25tdma.call_end();
+	// Reset the per-slot software IMBE decoders so YSF / DMR fullrate calls
+	// don't inherit a stuck ER, stale voicing history, or any other cross-
+	// frame state from the previous call - same class of bug as the P25
+	// p25p1_fdma path; would otherwise produce silent recordings when the
+	// previous call ended with errors.
+	d_software_decoder[0].clear();
+	d_software_decoder[1].clear();
+	d_imbe_vocoder[0].clear();
+	d_imbe_vocoder[1].clear();
 }
 
 void rx_sync::crypt_reset(void) {
@@ -463,11 +472,11 @@ void rx_sync::codeword(const uint8_t* cw, const enum codeword_types codeword_typ
 			} else {
 				int16_t frame_vector[8];
 
-                for (int i=0; i < 8; i++) {
-                    frame_vector[i] = u[i];
-                }
-                frame_vector[7] >>= 1;
-                d_imbe_vocoder[slot_id].imbe_decode(frame_vector, samp_buf);
+				for (int i=0; i < 8; i++) {
+					frame_vector[i] = u[i];
+				}
+				frame_vector[7] >>= 1;
+				d_imbe_vocoder[slot_id].imbe_decode_checked(frame_vector, E0, ET, samp_buf);
 			}
 		} else {	/* halfrate */
 			if (!do_silence) {

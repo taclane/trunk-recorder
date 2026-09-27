@@ -36,6 +36,11 @@
 #include <math.h>
 #include <string.h>
 
+// Tuning parameters for the synthesis and error-concealment changes on top of
+// the TIA-102.BABA-A decoder are the fields of VocoderParams in
+// software_imbe_decoder.h (defaults and measured effect of each are commented
+// there). Background and measurements: docs/Notes/VOCODER-IMPROVEMENTS.md.
+
 static const int BMTn[3600] = {
 	3, 3, 4, 5, 6, 7, 8, 3, 4, 5, 6, 7, 8, 9, 3, 4,
 	5, 6, 7, 8, 9, 10, 3, 4, 5, 6, 7, 8, 9, 10, 3, 4,
@@ -722,45 +727,78 @@ static const float woaa[105] = {
 	1.418842, 1.367615, 1.317176, 1.267748, 1.219512, 1.172608, 1.127142, 1.083189, 1.040799
 };
 
-static const float PhzNz[57] = {
-	0.000000, 3.002978, -0.385743, -1.804058, 0.708389, 3.080091, 0.234237, -2.601564, 2.564900, 0.101063, -0.241570, -2.283176, 0.460491, -1.611275, 2.258339, -2.055267,
-	1.733923, 2.517236, -1.766211, 0.897032, -2.360999, -0.280836, -2.714514, 2.100092, 2.300326, -1.158767, -2.044268, -2.668387, -2.578737, 0.185036, 1.551429, 2.726814,
-	2.655614, 3.046857, 0.834348, -0.513595, 1.466037, 0.691121, 0.127319, -2.034924, -1.070655, 0.456588, -2.278682, 1.229021, -2.139595, -0.119750, -0.301534, 0.029391,
-	0.068775, 0.520336, 2.339119, -0.808328, 1.332154, 2.929768, -0.338316, 0.022767, -1.063795
-};
-
 software_imbe_decoder::software_imbe_decoder()
 {
-   int i,j;
-	//initialize
-   ER = 0;
+   voiced_phase_seed = 0xDEADBEEFu;
+   clear();
+}
+
+void
+software_imbe_decoder::clear()
+{
+   // Reset every piece of cross-frame state. Must be called between calls;
+   // otherwise the previous call's tail (high ER from a noisy ending, the
+   // stuck rpt_ctr, last vee_history) leaks into the next call and pins the
+   // gating into permanent mute - which produces fully-silent output files.
+   ER = 0.0f;
+   SE = 10000.0f;
    rpt_ctr = 0;
    OldL = 0;
    L = 9;
    Old = 1; New = 0;
-   psi1 = 0.0;
-   for(i=0; i < 58; i++) {
-      for(j=0; j < 2; j++) {
-         log2Mu[i][j] = 0.0;
+   psi1 = 0.0f;
+   Oldw0 = 0.0f;
+   w0 = 0.0f;
+   Luv = 0.0f;
+   ErFlag = 0;
+
+   memset(vee_history, 0, sizeof(vee_history));
+
+   for (int i = 0; i < 58; i++) {
+      for (int j = 0; j < 2; j++) log2Mu[i][j] = 0.0f;
+   }
+   for (int i = 0; i < 57; i++) {
+      for (int j = 0; j < 2; j++) {
+         phi[i][j] = 0.0f;
+         M[i][j]   = 0.0f;
+         Mu[i][j]  = 0.0f;
+         vee[i][j] = 0;
       }
    }
-   for(i=0; i < 57; i++) {
-      for(j=0; j < 2; j++) {
-         phi[i][j] = 0.0;
-      }
+   memset(Olduw, 0, sizeof(Olduw));
+   memset(uv_tail_, 0, sizeof(uv_tail_));
+   memset(sv,    0, sizeof(sv));
+   memset(suv,   0, sizeof(suv));
+
+   // Re-seed unvoiced excitation. The full 32-bit xorshift32 state lives in
+   // unvoiced_noise_state so its period is 2^32 - 1; the u[] array just
+   // caches per-frame noise samples in the LCG-era output range [0, 53124].
+   unvoiced_noise_state = 0xC0FFEEu;
+   u[0] = next_u(0);
+   for (int i = 1; i < 211; i++) {
+      u[i] = next_u(0);
    }
-   for(i=0; i < 256; i++) {
-      Olduw[i] = 0.0;
-   }
-   u[0] = 3147;
-   for(i=1; i < 211; i++) {
-      u[i] = next_u(u[i-1]);
-   }
+
+   // voiced_phase_seed is intentionally NOT reset - xorshift32 with a fixed
+   // initial seed would make every call's voiced-phase noise identical
+   // (low-grade comb artifact). Let it evolve naturally across calls.
 }
 
 uint32_t
-software_imbe_decoder::next_u(uint32_t u) {
-   return (u * 171 + 11213) % 53125;
+software_imbe_decoder::next_u(uint32_t /*unused*/) {
+   // Long-period unvoiced noise. Original LCG (171*u + 11213) mod 53125 had a
+   // FULL period of 53125 samples (Hull-Dobell conditions all hold). An earlier
+   // version of this code stepped xorshift32 then folded mod 53125 with the
+   // *folded* value used as the next state - that capped the cycle structure
+   // at 53125 again with no guarantee of full period. Keep a real 32-bit
+   // xorshift32 state separately from the modulo output; period = 2^32 - 1.
+   //
+   // The input arg is kept for caller compatibility but ignored.
+   if (unvoiced_noise_state == 0) unvoiced_noise_state = 0xC0FFEEu;
+   unvoiced_noise_state ^= unvoiced_noise_state << 13;
+   unvoiced_noise_state ^= unvoiced_noise_state >> 17;
+   unvoiced_noise_state ^= unvoiced_noise_state << 5;
+   return unvoiced_noise_state % 53125;
 }
 
 software_imbe_decoder::~software_imbe_decoder()
@@ -778,9 +816,6 @@ software_imbe_decoder::decode(int16_t samples[IMBE_SAMPLES_PER_FRAME], const voi
 
 	// PN/Hamming/Golay - etc.
 	imbe_header_decode(cw, u0, u1, u2, u3, u4, u5, u6, u7, E0, ET) ;
-
-	//replace the sync bit(LSB of u7) with the BOT flag
-	u7 = u7 | 0x01; //ECC procedure called above always returns u7 LSB = 0
 
 	decode_fullrate(samples, u0, u1, u2, u3, u4, u5, u6, u7, E0, ET); // process 88-bit frame
 }
@@ -864,17 +899,28 @@ void
 software_imbe_decoder::decode_fullrate(int16_t samples[IMBE_SAMPLES_PER_FRAME], uint32_t u0, uint32_t u1, uint32_t u2, uint32_t u3, uint32_t u4, uint32_t u5, uint32_t u6, uint32_t u7, uint32_t E0, uint32_t ET)
 {
 	int K;
-	float SE = 0;
 	int en, tmp_f;
 	bool muted = false;
+	bool repeated = false;
+
+	// u7 arrives as imbe_header_decode() leaves it: the 7 unprotected bits
+	// shifted left by one (bit 0 free). b0, rearrange() and the fixed-point
+	// decoder all index those 7 bits unshifted (b0 LSBs at bits 1-2, b2 LSB at
+	// bit 3, residual bits at 0x40/0x20/0x10 - cf. imbe_vocoder ch_decode.cc,
+	// mbelib imbe_d[85..86], JMBE IMBEFrame bits 141..142). Without this
+	// shift every frame decodes with the wrong pitch LSBs, gain LSB and three
+	// wrong spectral residual bits.
+	u7 >>= 1;
     int b0 = ((u0 >> 4) & 0xfc) | ((u7 >> 1) & 0x3);
 
 	ER = (0.95 * ER) + (0.000365 * ET);
-	if( ER > 0.0875) {                                           // Frame Muting per TIA-102-BABA-A section 7.8
+	if( ER > params_.mute_er) {                                  // Frame Muting per TIA-102-BABA-A section 7.8
 		muted = true;
-	} else if(b0 > 207 || E0 >= 2 || ET >=(10 + 40 * ER)) {      // Frame Repeat per TIA-102-BABA-A section 7.7
+	} else if(b0 > 207 || (int)E0 >= params_.repeat_e0 || ET >= (params_.repeat_et_base + params_.repeat_et_slope * ER)) { // Frame Repeat per TIA-102-BABA-A section 7.7
 		if (repeat_last()) {                                     // mute if repeat not allowed
 			muted = true;
+		} else {
+			repeated = true;
 		}
 	} else {                                                     // Voice Frame decoding
 		rpt_ctr = 0;
@@ -890,63 +936,52 @@ software_imbe_decoder::decode_fullrate(int16_t samples[IMBE_SAMPLES_PER_FRAME], 
 		decode_spectral_amplitudes(Start3, Start8);
 		enhance_spectral_amplitudes(SE);
 	}
-	if (!muted) {
+	if (muted) {
+		// Mute: synthesize a zero-amplitude frame that holds the last good
+		// parameters. The previous frame's overlap tail then fades out
+		// through the synthesis window instead of being cut off (click), and
+		// the frame after the mute fades in from silence. Prediction memory
+		// (log2Mu) is carried over unchanged, as for a repeat.
+		w0 = Oldw0;
+		if (OldL > 0) L = OldL;
+		for (int l = 0; l < 57; l++) {
+			vee[l][New] = 0;
+			M[l][New] = 0.0f;
+			Mu[l][New] = Mu[l][Old];
+			log2Mu[l][New] = log2Mu[l][Old];
+		}
+		log2Mu[57][New] = log2Mu[57][Old];
+		compute_envelope_phases();
+	}
+	if (repeated) {
+		// Frame repeat (TIA-102.BABA §7.7): repeat_last() has already
+		// reloaded L, w0, vee, M, Mu and log2Mu from [Old]. The phases
+		// must still advance: psi1 keeps accumulating and phi[New] is
+		// recomputed, otherwise each harmonic is forced back to the
+		// previous frame's end phase, which detunes it (fine transition)
+		// or cancels it in the overlap region (coarse transition).
+		// adaptive_smoothing / voicing smoothing / postfilter are already
+		// baked into the reloaded values and are not re-applied.
+		if (params_.repeat_amplitude_decay != 1.0f) {
+			for (int l = 1; l <= L; l++)
+				M[l][New] *= params_.repeat_amplitude_decay;
+		}
+		compute_envelope_phases();
+	} else if (!muted) {
 		adaptive_smoothing(SE, ET);
-
-		// (8000 samp/sec) * (1 sec / 50 compressed voice frames) = 160 samples/frame
-
-		//synth:
-		synth_unvoiced();// ToDo: make suv return value?
-		synth_voiced(); // ToDo: make sv return value?
-
-		//output:
-		for(en = 0; en <= 159; en++) {
-			// The unvoiced samples are loud and the voiced are low...I don't know why.
-			// Most of the difference is compensated by removing the 146.6433 factor
-			// in the synth_unvoiced procedure.  The final tweak is done by raising the
-			// voiced samples:
-			float sample = suv[en] + sv[en] * 4; //balance v/uv loudness
-			if(abs((int)sample) > 32767) {
-				sample = (sample < 0) ? -32767 : 32767; // * sgn(sample)
-			}
-			samples[en] = sample;
-		}
-	} else { // muted
-		for(en = 0; en <= 159; en++) {
-			samples[en] = 0;
-		}
+		smooth_voicing_decisions();
+		smooth_amplitudes();
+		compute_envelope_phases();   // BEFORE postfilter - sees raw M
+		apply_formant_postfilter();
 	}
-	OldL = L;
-	Oldw0 = w0;
-	tmp_f = Old; Old = New; New = tmp_f;
-}
-
-void
-software_imbe_decoder::decode_tap(int16_t samples[IMBE_SAMPLES_PER_FRAME], int _L, int _K, float _w0, const int * _v, const float * _mu)
-{
-	int ell;
-	uint32_t ET=0;
-	float SE = 0;
-	int en, tmp_f;
-
-	// TODO: For now half rate frame repeats are handled outside of this code
-	// It would probably be better to move them into here since the mechanism
-	// is largely the same.  Would also need to integrate tone repeats etc.
-
-	L = _L;
-	w0 = _w0;
-	for(ell = 1; ell <= L; ell++) {
-		vee[ell][ New] = _v[ell - 1];
-		Mu[ell][ New] = _mu[ell - 1];
-	}
-	// decode_spectral_amplitudes(Start3, Start8);
-	enhance_spectral_amplitudes(SE);
-	adaptive_smoothing(SE, ET);
 
 	// (8000 samp/sec) * (1 sec / 50 compressed voice frames) = 160 samples/frame
 
 	//synth:
-	synth_unvoiced();// ToDo: make suv return value?
+	if (params_.uv_synth_mode == 1)
+		synth_unvoiced_smooth();
+	else
+		synth_unvoiced();// ToDo: make suv return value?
 	synth_voiced(); // ToDo: make sv return value?
 
 	//output:
@@ -960,7 +995,85 @@ software_imbe_decoder::decode_tap(int16_t samples[IMBE_SAMPLES_PER_FRAME], int _
 			sample = (sample < 0) ? -32767 : 32767; // * sgn(sample)
 		}
 		samples[en] = sample;
-    }
+	}
+
+	OldL = L;
+	Oldw0 = w0;
+	tmp_f = Old; Old = New; New = tmp_f;
+}
+
+void
+software_imbe_decoder::decode_tap(int16_t samples[IMBE_SAMPLES_PER_FRAME], int _L, int _K, float _w0, const int * _v, const float * _mu)
+{
+	int ell;
+	uint32_t ET=0;
+
+	// TODO: For now half rate frame repeats are handled outside of this code
+	// It would probably be better to move them into here since the mechanism
+	// is largely the same.  Would also need to integrate tone repeats etc.
+
+	L = _L;
+	w0 = _w0;
+	for(ell = 1; ell <= L; ell++) {
+		vee[ell][ New] = _v[ell - 1];
+		Mu[ell][ New] = _mu[ell - 1] * params_.tap_gain;
+	}
+	// decode_spectral_amplitudes(Start3, Start8);
+	enhance_spectral_amplitudes(SE);
+	adaptive_smoothing(SE, ET);
+	smooth_voicing_decisions();
+	compute_envelope_phases();   // BEFORE postfilter - sees raw M
+	apply_formant_postfilter();
+
+	synthesize_frame(samples);
+}
+
+void
+software_imbe_decoder::decode_tap_mute(int16_t samples[IMBE_SAMPLES_PER_FRAME])
+{
+	// Muted half-rate frame: synthesize a zero-amplitude frame holding the
+	// last parameters, as decode_fullrate() does for a muted full-rate
+	// frame, so the previous frame's tail fades out and the next frame fades
+	// in instead of starting from stale state after a hard cut to silence.
+	if (Oldw0 > 0.0f) w0 = Oldw0;
+	if (OldL > 0) L = OldL;
+	for (int l = 0; l < 57; l++) {
+		vee[l][New] = 0;
+		M[l][New] = 0.0f;
+	}
+	compute_envelope_phases();
+
+	synthesize_frame(samples);
+}
+
+void
+software_imbe_decoder::synthesize_frame(int16_t samples[IMBE_SAMPLES_PER_FRAME])
+{
+	// Synthesis and output shared by the half-rate entry points: renders the
+	// [Old] -> [New] transition already set up in M / vee / phi, then advances.
+	int en, tmp_f;
+
+	// (8000 samp/sec) * (1 sec / 50 compressed voice frames) = 160 samples/frame
+
+	//synth:
+	if (params_.uv_synth_mode == 1)
+		synth_unvoiced_smooth();
+	else
+		synth_unvoiced();// ToDo: make suv return value?
+	synth_voiced(); // ToDo: make sv return value?
+
+	//output:
+	for(en = 0; en <= 159; en++) {
+		// The unvoiced samples are loud and the voiced are low...I don't know why.
+		// Most of the difference is compensated by removing the 146.6433 factor
+		// in the synth_unvoiced procedure.  The final tweak is done by raising the
+		// voiced samples:
+		float sample = suv[en] + sv[en] * 4; //balance v/uv loudness
+		if(abs((int)sample) > 32767) {
+			sample = (sample < 0) ? -32767 : 32767; // * sgn(sample)
+		}
+		samples[en] = sample;
+	}
 	OldL = L;
 	Oldw0 = w0;
 	tmp_f = Old; Old = New; New = tmp_f;
@@ -1129,7 +1242,7 @@ int
 software_imbe_decoder::repeat_last()
 {
    // Frame Repeat per TIA-102-BABA-A sections 7.7 & 14.6
-   if (++rpt_ctr >= 4)
+   if (++rpt_ctr >= params_.max_repeats)
       return 1;
 
    // Reload parameters from previous frame
@@ -1302,6 +1415,250 @@ software_imbe_decoder::enhance_spectral_amplitudes(float& SE)
 }
 
 void
+software_imbe_decoder::smooth_voicing_decisions()
+{
+   // Voicing-decision median smoothing, after US6912496 (DVSI, expired Mar
+   // 2023). For each harmonic l, replace vee[l][New] with the majority across
+   // VOICING_SMOOTH_TAPS frames (current + (N-1) past). Cleans up V/UV
+   // chattering at phoneme boundaries. Per-frame pre-smoothing originals are
+   // pushed into vee_history so smoothing doesn't compound over time.
+   if (params_.voicing_smooth_taps < 2) return;
+
+   // History must still be updated (so when smoothing later kicks in, it has
+   // recent frames to median across). But the actual median writeback is
+   // skipped on low-error frames - the patent applies smoothing only to
+   // "erroneously coded" frames; smoothing clean frames costs latency on
+   // legitimate fast V/UV transitions for no benefit.
+   const bool apply = (ER >= params_.voicing_smooth_er_threshold);
+
+   const int TAPS = (params_.voicing_smooth_taps > 4) ? 4 : params_.voicing_smooth_taps;
+   const int PAST = TAPS - 1;
+   const int majority = (TAPS / 2) + 1;
+
+   int original[57];
+   for (int l = 1; l <= 56; l++) {
+      original[l] = (l <= L) ? vee[l][New] : 0;
+   }
+
+   if (apply) {
+      for (int l = 1; l <= L; l++) {
+         int sum = original[l];
+         for (int p = 0; p < PAST; p++) sum += vee_history[l][p];
+         vee[l][New] = (sum >= majority) ? 1 : 0;
+      }
+   }
+
+   // Always shift history with the raw (pre-smoothing) value so future-frame
+   // medians look at unaltered input.
+   for (int l = 1; l <= 56; l++) {
+      for (int p = PAST - 1; p > 0; p--) {
+         vee_history[l][p] = vee_history[l][p - 1];
+      }
+      vee_history[l][0] = original[l];
+   }
+}
+
+void
+software_imbe_decoder::smooth_amplitudes()
+{
+   const float a = params_.amp_smooth;
+   if (a <= 0.0f || OldL <= 0 || Oldw0 <= 0.0f)
+      return;
+   float e_new = 0.0f, e_old = 0.0f;
+   for (int l = 1; l <= L; l++) e_new += M[l][New] * M[l][New];
+   for (int l = 1; l <= OldL; l++) e_old += M[l][Old] * M[l][Old];
+   if (e_old <= 0.0f || e_new > 4.0f * e_old)   // onset or after silence/mute
+      return;
+   for (int l = 1; l <= L; l++) {
+      // previous frame's envelope at this harmonic's frequency
+      float k = l * w0 / Oldw0;
+      int k0 = (int)k;
+      if (k0 < 1 || k0 >= OldL) continue;
+      float t = k - k0;
+      float m0 = M[k0][Old], m1 = M[k0 + 1][Old];
+      if (m0 <= 0.0f || m1 <= 0.0f || M[l][New] <= 0.0f) continue;
+      float lp = (1.0f - t) * log2f(m0) + t * log2f(m1);
+      float ln = log2f(M[l][New]);
+      M[l][New] = exp2f(ln + a * (lp - ln));
+   }
+}
+
+void
+software_imbe_decoder::compute_envelope_phases()
+{
+   // Voiced phase regeneration per US5701390 (DVSI, expired Feb 2015).
+   //
+   // Three corrections vs the older inline version that lived in synth_voiced:
+   //   - Reads M (the enhanced spectral magnitudes) BEFORE apply_formant_postfilter
+   //     has run, so the Hilbert kernel sees the un-postfiltered envelope.
+   //     Called from decode_fullrate prior to the postfilter.
+   //   - Uses the proper discrete Hilbert kernel  h(n) = 2/(pi*n) for odd n
+   //     (and 0 for even n) instead of the simple 1/m fallback. That's the
+   //     actual log-magnitude -> minimum-phase transform; the 1/m version was
+   //     a rough approximation that exaggerated low-order terms.
+   //   - Subtracts the in-band mean of B = log2(M) before convolving, so the
+   //     boundary extensions (symmetric for l<=0, geometric decay for l>L)
+   //     don't leak DC into the phase output. The Hilbert transform has no
+   //     DC response; this restores that property under truncation.
+
+   // UV->V transition (after US6963833): restart the linear-phase
+   // accumulator at voicing onset. Note that with an all-unvoiced previous
+   // frame synth_voiced() only uses phi[New] for the onset, so the absolute
+   // value of psi1 changes nothing audible; kept as a knob for experiments.
+   if (params_.uv_to_v_reset) {
+      bool prev_any_voiced = false;
+      for (int l = 1; l <= OldL && !prev_any_voiced; l++) {
+         if (vee[l][Old]) prev_any_voiced = true;
+      }
+      bool cur_any_voiced = false;
+      for (int l = 1; l <= L && !cur_any_voiced; l++) {
+         if (vee[l][New]) cur_any_voiced = true;
+      }
+      if (!prev_any_voiced && cur_any_voiced) {
+         psi1 = 0.0f;
+      }
+   }
+
+   psi1 = psi1 + (Oldw0 + w0) * 80;
+   psi1 = remainderf(psi1, 2 * M_PI);
+
+   const int MAX_D = 19;
+   const int D = (params_.phase_kernel_d > MAX_D) ? MAX_D : params_.phase_kernel_d;
+
+   // Build log-magnitude vector B[1..L]; B[0] = 0.
+   float B[2 * 19 + 57];   // index B[l + MAX_D] for l in [-MAX_D, 56+MAX_D]
+   for (int i = 0; i < (int)(sizeof(B)/sizeof(B[0])); i++) B[i] = 0.0f;
+   const bool patent_kernel = (params_.phase_kernel == 1);
+
+   double mean_B = 0.0;
+   for (int l = 1; l <= L; l++) {
+      float mag = M[l][New];
+      float bl  = (mag > 1e-6f) ? log2f(mag) : -20.0f;
+      B[l + MAX_D] = bl;
+      mean_B += bl;
+   }
+   if (!patent_kernel && L > 0) {
+      // Subtract the in-band mean so the boundary extensions don't leak DC
+      // into the phase (the Hilbert transform has no DC response).
+      mean_B /= (double)L;
+      for (int l = 1; l <= L; l++) B[l + MAX_D] -= (float)mean_B;
+   }
+   // Extension past L first (patent: constant gamma * B[L]; odd-Hilbert
+   // form: geometric decay), then the symmetric reflection B[-l] = B[l] so
+   // reflected indices beyond L see the extended values rather than zero.
+   {
+      float decay = 1.0f;
+      float B_L = B[L + MAX_D];
+      for (int l = L + 1; l <= L + D && l < 56 + MAX_D; l++) {
+         if (patent_kernel) {
+            B[l + MAX_D] = params_.phase_kernel_gamma * B_L;
+         } else {
+            decay *= params_.phase_kernel_gamma;
+            B[l + MAX_D] = B_L * decay;
+         }
+      }
+   }
+   for (int l = 1; l <= D; l++) {
+      B[-l + MAX_D] = B[l + MAX_D];
+   }
+
+   // Kernel weights: odd-only discrete Hilbert h(m) = 2/(pi*m), or the
+   // patent's h(m) = 1/m over all m.
+   const float kscale = patent_kernel ? 1.0f : 2.0f / (float)M_PI;
+   const int kstep = patent_kernel ? 1 : 2;
+
+   // TIA eq. 142 weights the random phase by this frame's unvoiced
+   // fraction. Luv itself is only updated later in synth_unvoiced(), so
+   // count it here from the current decisions.
+   int n_uv = 0;
+   for (int l = 1; l <= L; l++) if (!vee[l][New]) n_uv++;
+   float rho = (L > 0) ? ((float)n_uv / (float)L) : 0.0f;
+   const int MaxL = (L > OldL) ? L : OldL;
+   for (int ell = 1; ell <= MaxL; ell++) {
+      float env_phase = 0.0f;
+      for (int m = 1; m <= D; m += kstep) {
+         env_phase += kscale * (B[ell + m + MAX_D] - B[ell - m + MAX_D]) / (float)m;
+      }
+      uint32_t s = voiced_phase_seed;
+      s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+      voiced_phase_seed = s;
+      float z = ((float)s * (2.0f / 4294967296.0f) - 1.0f) * (float)M_PI;
+      if (ell <= L/4) {
+         phi[ell][New] = psi1 * ell
+                       + params_.phase_low_blend * params_.phase_c_env * env_phase;
+      } else {
+         phi[ell][New] = psi1 * ell
+                       + params_.phase_c_env * env_phase
+                       + params_.phase_w_rand * rho * z;
+      }
+   }
+}
+
+void
+software_imbe_decoder::apply_formant_postfilter()
+{
+   // Adaptive formant postfilter, conceptually after US5241650 (expired 2009).
+   // Implementation and tuning notes are in the FMT_* block at the top of this
+   // file.
+   if (L < 4) return;
+
+   float logM[57] = {0};
+   for (int l = 1; l <= L; l++) {
+      float m = M[l][New];
+      logM[l] = (m > 1e-6f) ? log2f(m) : -20.0f;
+   }
+
+   // (2W+1)-tap smoothing of log magnitudes with symmetric reflection at
+   // the band edges (gap 5a). Clamp-to-edge biased the smoothed value at
+   // l=1 and l=L to itself, which over-emphasized those harmonics relative
+   // to mid-band; reflection gives them a real neighborhood.
+   const int W_local = params_.fmt_w;
+   float logM_smooth[57] = {0};
+   for (int l = 1; l <= L; l++) {
+      float sum = 0.0f;
+      int count = 0;
+      for (int j = l - W_local; j <= l + W_local; j++) {
+         int jr;
+         if (j < 1) {
+            jr = 2 - j;          // 0 -> 2, -1 -> 3, ...
+            if (jr > L) jr = L;  // very short L safety
+         } else if (j > L) {
+            jr = 2 * L - j;      // L+1 -> L-1, L+2 -> L-2, ...
+            if (jr < 1) jr = 1;
+         } else {
+            jr = j;
+         }
+         sum += logM[jr];
+         count++;
+      }
+      logM_smooth[l] = sum / (float)count;
+   }
+
+   // Apply contrast emphasis only to voiced harmonics (gap 5b). Unvoiced
+   // bands carry noise-like content where there's no formant peak to
+   // emphasize; running the postfilter on them just makes noise sharper.
+   float energy_before = 0.0f, energy_after = 0.0f;
+   for (int l = 1; l <= L; l++) {
+      energy_before += M[l][New] * M[l][New];
+      if (vee[l][New]) {
+         float scale = exp2f(params_.fmt_alpha * (logM[l] - logM_smooth[l]));
+         M[l][New] = M[l][New] * scale;
+      }
+      energy_after += M[l][New] * M[l][New];
+   }
+
+   // Renormalize TOTAL energy (voiced bands modified, unvoiced unchanged).
+   // Preserves overall loudness so the postfilter doesn't shift balance
+   // between voiced and unvoiced regions in mixed-voicing frames.
+   if (energy_after > 1e-6f) {
+      float norm = sqrtf(energy_before / energy_after);
+      for (int l = 1; l <= L; l++) {
+         M[l][New] = M[l][New] * norm;
+      }
+   }
+}
+
+void
 software_imbe_decoder::ifft(float FDi[], float FDq[], float TD[]) // ToDo: replace "real IFFT" with fftw3 IFFT proc!
 {
 	//Inverse FFT:
@@ -1382,7 +1739,11 @@ software_imbe_decoder::rearrange(uint32_t u0, uint32_t u1, uint32_t u2, uint32_t
 
    w0 = 4 * M_PI /(bee[0] + 39.5);
 
-   L =(int)(.9254 * floorf((M_PI / w0) + .25)); if(L < 9 || L > 56) exit(2);
+   L =(int)(.9254 * floorf((M_PI / w0) + .25));
+   // Bit errors in bee[0] can produce out-of-spec L. Clamp instead of exit():
+   // a clamped frame is wrong but the caller's repeat/mute logic absorbs it.
+   if(L < 9) L = 9;
+   if(L > 56) L = 56;
 
    if( L > 36) {
       K = 12;
@@ -1567,6 +1928,130 @@ software_imbe_decoder::synth_unvoiced()
    }
 }
 
+// In-place radix-2 complex FFT; inverse when inv is true (unscaled).
+static void
+fft_radix2(float re[], float im[], int n, bool inv)
+{
+   for (int i = 1, j = 0; i < n; i++) {
+      int bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j) { float t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+   }
+   for (int len = 2; len <= n; len <<= 1) {
+      float ang = (inv ? 2.0f : -2.0f) * (float)M_PI / len;
+      float wr = cosf(ang), wi = sinf(ang);
+      for (int i = 0; i < n; i += len) {
+         float cr = 1.0f, ci = 0.0f;
+         for (int k = 0; k < len / 2; k++) {
+            int a = i + k, b = i + k + len / 2;
+            float tr = re[b] * cr - im[b] * ci, ti = re[b] * ci + im[b] * cr;
+            re[b] = re[a] - tr; im[b] = im[a] - ti;
+            re[a] += tr; im[a] += ti;
+            float ncr = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = ncr;
+         }
+      }
+   }
+}
+
+// Share of a voiced harmonic's power (at w radians/sample) rendered as noise.
+float
+software_imbe_decoder::aper_share(float w) const
+{
+   if (params_.aper_max <= 0.0f || params_.uv_synth_mode != 1) return 0.0f;
+   float f = w * 8000.0f / (2.0f * (float)M_PI);
+   float t = (f - params_.aper_f1) / (params_.aper_f2 - params_.aper_f1);
+   t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+   return params_.aper_max * t;
+}
+
+// Presence lift (linear gain) for a component at w radians/sample.
+float
+software_imbe_decoder::hf_gain(float w) const
+{
+   if (params_.hf_lift_db == 0.0f) return 1.0f;
+   float f = w * 8000.0f / (2.0f * (float)M_PI);
+   if (f <= params_.hf_lift_f1) return 1.0f;
+   float t = (f - params_.hf_lift_f1) / (3700.0f - params_.hf_lift_f1);
+   if (t > 1.0f) t = 1.0f;
+   return powf(10.0f, params_.hf_lift_db * t / 20.0f);
+}
+
+void
+software_imbe_decoder::synth_unvoiced_smooth()
+{
+   // Colored noise for this frame's unvoiced bands: complex Gaussian bins whose
+   // mean power is proportional to M_l^2 - M_l is a spectral density, as in
+   // the TIA path, so a band's power grows with its width - inverse FFT to a
+   // stationary 512-sample segment. Samples 0-159 are cross-faded in over
+   // this output frame and samples 160-319 carry on into the next one, so
+   // each frame's noise is fully present from where the TIA path would have
+   // finished its cross-fade until the next frame's cross-fade.
+   const int N = 512;
+   const float UV_DENSITY = 0.85f;   // calibrated to the TIA path's level
+   float re[N], im[N];
+   for (int i = 0; i < N; i++) { re[i] = 0.0f; im[i] = 0.0f; }
+
+   Luv = 0;
+   for (int ell = 1; ell <= L; ell++) {
+      float amp = M[ell][New];
+      if (vee[ell][New]) {
+         // aperiodic share of a voiced harmonic: a sinusoid of amplitude M
+         // leaves the output at 4*M (power 8*M^2); a noise band of density
+         // d has power 2*nb*(UV_DENSITY*d)^2, so pick d for beta*8*M^2.
+         float beta = aper_share(ell * w0);
+         if (beta <= 0.0f) continue;
+         int nb0 = (int)ceilf((ell + 0.5f) * w0 * N / (2.0f * (float)M_PI)) - (int)ceilf((ell - 0.5f) * w0 * N / (2.0f * (float)M_PI));
+         if (nb0 <= 0) continue;
+         amp = M[ell][New] * sqrtf(8.0f * beta / (2.0f * nb0)) / UV_DENSITY;
+      } else {
+         Luv = Luv + 1;
+      }
+      int lo = (int)ceilf((ell - 0.5f) * w0 * N / (2.0f * (float)M_PI));
+      int hi = (int)ceilf((ell + 0.5f) * w0 * N / (2.0f * (float)M_PI));
+      if (lo < 1) lo = 1;
+      if (hi > N / 2) hi = N / 2;
+      int nb = hi - lo;
+      if (nb <= 0) continue;
+      float sigma = (vee[ell][New] ? 1.0f : params_.uv_smooth_gain) * UV_DENSITY * amp * hf_gain(ell * w0) * (float)N;
+      float band_pow = 0.0f;
+      for (int k = lo; k < hi; k++) {
+         // Box-Muller from the full-period xorshift generator
+         float u1 = (next_u(0) + 1.0f) / 53126.0f, u2 = next_u(0) / 53125.0f;
+         float r = sqrtf(-logf(u1));
+         re[k] = r * cosf(2.0f * (float)M_PI * u2);
+         im[k] = r * sinf(2.0f * (float)M_PI * u2);
+         band_pow += r * r;
+      }
+      // Scale the band to exactly its target power (as the TIA path does);
+      // with only a few bins per band, random bin magnitudes would otherwise
+      // make the band level jump from frame to frame.
+      float g = (band_pow > 0.0f) ? sigma * sqrtf(nb / band_pow) : 0.0f;
+      for (int k = lo; k < hi; k++) {
+         re[k] *= g;
+         im[k] *= g;
+         re[N - k] = re[k];
+         im[N - k] = -im[k];
+      }
+   }
+   fft_radix2(re, im, N, true);
+   // The previous frame's noise continues through this frame (uv_tail_ holds
+   // its unwindowed continuation); cross-fade to this frame's noise with
+   // sin/cos weights so the two uncorrelated signals keep constant power.
+   int X = params_.uv_xfade < 2 ? 2 : (params_.uv_xfade > 160 ? 160 : params_.uv_xfade);
+   int x0 = 80 - X / 2;
+   for (int en = 0; en < 160; en++) {
+      float p = (en + 0.5f - x0) / X;
+      p = p < 0.0f ? 0.0f : (p > 1.0f ? 1.0f : p);
+      float w_new = sinf(0.5f * (float)M_PI * p);
+      float w_old = cosf(0.5f * (float)M_PI * p);
+      suv[en] = w_old * uv_tail_[en] + w_new * re[en] / N;
+      uv_tail_[en] = re[en + 160] / N;
+   }
+   // keep the TIA path's overlap memory consistent in case the mode changes
+   memset(Olduw, 0, sizeof(Olduw));
+}
+
 void
 software_imbe_decoder::synth_voiced()
 {
@@ -1581,22 +2066,15 @@ software_imbe_decoder::synth_voiced()
 
    int ell, en;
 
-   if( L > OldL) { 
-      MaxL = L; 
+   if( L > OldL) {
+      MaxL = L;
    } else {
       MaxL = OldL;
    }
 
-   psi1 = psi1 +(Oldw0 + w0) * 80;
-   psi1 = remainderf(psi1, 2 * M_PI); // ToDo: decide if its 2pi or pi^2 // YEP it should be 2pi
-
-   for(ell = 1; ell <= L/4; ell++) {
-      phi[ell][ New] = psi1 * ell;
-   }
-
-   for(; ell <= MaxL; ell++) {
-      phi[ell][ New] = psi1 * ell /* + Tmp * PhzNz[ell] */;
-   }
+   // phi[][New] is set by compute_envelope_phases(), which decode_fullrate
+   // calls before apply_formant_postfilter so the envelope phase is computed
+   // from the magnitudes before any postfilter reshapes them.
 
    for(en = 0; en <= 159; en++) {
       sv[en] = 0;
@@ -1607,20 +2085,30 @@ software_imbe_decoder::synth_voiced()
       if(ell > L) { 
          MNew = 0;
       } else {
-         MNew = M[ell][ New];
+         MNew = M[ell][ New] * sqrtf(1.0f - aper_share(ell * w0)) * hf_gain(ell * w0);
       }
 
       if(ell > OldL) {
          MOld = 0;
       } else {
-         MOld = M[ell][ Old];
+         MOld = M[ell][ Old] * sqrtf(1.0f - aper_share(ell * Oldw0)) * hf_gain(ell * Oldw0);
       }
 
       if(vee[ell][ New]) {
          if ( vee[ell][ Old]) {
-            if(ell < 8 && fabsf(w0 - Oldw0) < .1 * w0) { // (fine transition)
+            // Fine-transition gating loosened per US6131084 (DVSI, expired
+            // ~2017): extend smooth amp/freq/phase interpolation higher in
+            // the spectrum and across mild pitch wobble. Tuning in
+            // INTERP_MAX_L / INTERP_PITCH_TOL at top of file.
+            if(ell < params_.interp_max_l && fabsf(w0 - Oldw0) < params_.interp_pitch_tol * w0) { // (fine transition)
                Dpl = phi[ell][ New] - phi[ell][ Old] -(Oldw0 + w0) * ell * 80;
-               Dwl = .00625 * (Dpl - 2 * M_PI * floorf((Dpl + M_PI) / (2 * M_PI)));
+               Dpl = params_.phase_track * (Dpl - 2 * M_PI * floorf((Dpl + M_PI) / (2 * M_PI)));
+               Dwl = .00625 * Dpl;
+               // With partial tracking the harmonic ends the frame short of
+               // phi[New]; record where it actually is so the next frame
+               // continues from there.
+               if (params_.phase_track != 1.0f)
+                  phi[ell][ New] = remainderf(phi[ell][ Old] + (Oldw0 + w0) * ell * 80 + Dpl, 2 * M_PI);
                THa = (Oldw0 * (float)ell + Dwl);
                THb = (w0 - Oldw0) * ell * .003125;
                Mb = .00625 *(MNew - MOld);
@@ -1639,6 +2127,10 @@ software_imbe_decoder::synth_voiced()
                   sv[en] = sv[en] + ws[en-55] * MNew * cos(w0 *(en - 160) * ell + phi[ell][ New]);
                }
             }
+         } else if (params_.onset_ramp_mode == 1) {
+            for(en = 0; en <= 159; en++) {
+               sv[en] = sv[en] + ((en + 0.5f) / 160.0f) * MNew * cos(w0 *(en - 160) * ell + phi[ell][ New]);
+            }
          } else {
             for(en = 56; en <= 159; en++) {
                sv[en] = sv[en] + ws[en-55] * MNew * cos(w0 *(en - 160) * ell + phi[ell][ New]);
@@ -1646,8 +2138,14 @@ software_imbe_decoder::synth_voiced()
          }
       } else {
          if( vee[ell][Old]) {
-            for(en = 0; en <= 105; en++) {
-               sv[en] = sv[en] + ws[en+105] * MOld * cos(Oldw0 * en * ell + phi[ell][ Old]);
+            if (params_.onset_ramp_mode == 1) {
+               for(en = 0; en <= 159; en++) {
+                  sv[en] = sv[en] + (1.0f - (en + 0.5f) / 160.0f) * MOld * cos(Oldw0 * en * ell + phi[ell][ Old]);
+               }
+            } else {
+               for(en = 0; en <= 105; en++) {
+                  sv[en] = sv[en] + ws[en+105] * MOld * cos(Oldw0 * en * ell + phi[ell][ Old]);
+               }
             }
          }
       }

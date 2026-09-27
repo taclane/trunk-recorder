@@ -60,7 +60,7 @@ p25p1_voice_decode::p25p1_voice_decode(bool verbose_flag, const op25_audio& udp,
 	const char *p = getenv("IMBE");
 	if (p && strcasecmp(p, "soft") == 0)
 		d_software_imbe_decoder = true;
-	else 
+	else
 		d_software_imbe_decoder = false;
     }
 
@@ -73,23 +73,26 @@ p25p1_voice_decode::p25p1_voice_decode(bool verbose_flag, const op25_audio& udp,
 
 void p25p1_voice_decode::clear() {
   vocoder.clear();
+  software_decoder.clear();      // critical: was leaking ER/state across calls
 }
 // more-optimized version of rxframe() used by p25p1_fdma
 void p25p1_voice_decode::rxframe(const voice_codeword& cw)
 {
 	int16_t snd[FRAME];
-	if (d_software_imbe_decoder) {
-		software_decoder.decode(snd, cw);
-	} else { // non-default decoder, do we still need to support it?
-		uint32_t u[8], E0, ET;
-		int16_t frame_vector[8];
-		imbe_header_decode(cw, u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7], E0, ET);
+	uint32_t u[8], E0, ET;
+	imbe_header_decode(cw, u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7], E0, ET);
 
-		for (int i=0; i < 8; i++) { // Ugh. For compatibility convert imbe params from uint32_t to int16_t
+	if (d_software_imbe_decoder) {
+		// software_imbe_decoder::decode() already applies TIA-102.BABA-A §7.7-7.8
+		// gating internally via decode_fullrate(); don't double-gate here.
+		software_decoder.decode(snd, cw);
+	} else {
+		int16_t frame_vector[8];
+		for (int i = 0; i < 8; i++) {
 			frame_vector[i] = u[i];
 		}
 		frame_vector[7] >>= 1;
-		vocoder.imbe_decode(frame_vector, snd);
+		vocoder.imbe_decode_checked(frame_vector, E0, ET, snd);
 	}
 
 	if (op25audio.enabled()) {
